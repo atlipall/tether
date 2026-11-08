@@ -797,6 +797,50 @@ class ChatsTest : BasePlatformTestCase() {
         assertTrue(message, message.endsWith("\n\nkept"))
     }
 
+    fun testAnUnnamedChatTakesTheNameOfTheBranchItMovesTo() {
+        val repo = gitRepo() ?: return
+        val chat = chats.open(ChatSpec.inProject(repo.path))
+        assertEquals("main", chat.title)
+        var changes = 0
+        chat.onTitleChanged = { changes++ }
+        chat.send("branch off")
+        awaitMessages(connections.single(), 1)
+        git(repo, "checkout", "-q", "-b", "login-fix")
+        connections.single().emit(Fx.result())
+        assertEquals("login-fix", chat.title)
+        assertEquals(1, changes)
+        connections.single().emit(Fx.init(cwd = repo.path))
+        assertEquals("the same branch again is no move", 1, changes)
+    }
+
+    fun testANamedChatKeepsItsNameButClearingItShowsTheNewBranch() {
+        val repo = gitRepo() ?: return
+        val chat = chats.open(ChatSpec.inProject(repo.path))
+        chat.rename("Login work")
+        var changes = 0
+        chat.onTitleChanged = { changes++ }
+        chat.send("branch off")
+        awaitMessages(connections.single(), 1)
+        git(repo, "checkout", "-q", "-b", "login-fix")
+        connections.single().emit(Fx.result())
+        assertEquals("Login work", chat.title)
+        assertEquals(0, changes)
+        chat.rename("")
+        assertEquals("login-fix", chat.title)
+    }
+
+    fun testABranchMoveIsNumberedPastOtherChatsAndAWorktreeBranchUsesItsName() {
+        val repo = gitRepo() ?: return
+        git(repo, "branch", "worktree-wt-9")
+        chats.open(ChatSpec.inProject(repo.path)).rename("wt-9")
+        val chat = chats.open(ChatSpec.inProject(repo.path))
+        chat.send("go")
+        awaitMessages(connections.last(), 1)
+        git(repo, "checkout", "-q", "worktree-wt-9")
+        connections.last().emit(Fx.result())
+        assertEquals("wt-9 2", chat.title)
+    }
+
     private val calc = "function total(a) {\n  return a<caret> + 1;\n}\n"
     private val inTotal = "[IDE] The user is looking at calc.js, caret at line 2:11, inside function `total` (lines 1–3).\n\n"
     private val locationOnly = "[IDE] The user is looking at calc.js, caret at line 2:11.\n\n"

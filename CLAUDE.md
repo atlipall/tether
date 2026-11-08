@@ -28,5 +28,6 @@ Tether runs inside JetBrains IDEs, so where the HIG and the IntelliJ Platform UI
 
 Don't commit directly to `main`. Every push to `main` that changes code publishes a new plugin version to everyone who installs Tether from the GitHub Pages plugin repository (`.github/workflows/release.yml`), so merging to `main` is a deliberate step.
 
+- Never push `main`, not even when asked to merge into it. Pushing it publishes a release, so the user always does it themselves.
 - Start a branch for new work.
 - A small change doesn't need its own branch when work is already under way on one; commit it there.

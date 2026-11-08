@@ -139,8 +139,9 @@ class Chats(private val project: Project) : Disposable {
             ide = ide,
             checkpoints = checkpoints,
             background = { AppExecutorUtil.getAppExecutorService().execute(it) },
-            defaultName = ChatNames.defaultName(ChatNames.branchLabel(spec), chats.map { it.title }),
+            defaultName = nameAmongOthers(ChatNames.branchLabel(spec)),
             saveTitle = ::saveTitle,
+            nameForBranch = { name -> nameAmongOthers(name, chat) },
             agents = agents,
             agent = agent,
             acpSession = { command, listener ->
@@ -156,6 +157,10 @@ class Chats(private val project: Project) : Disposable {
         if (spec.resumeId != null) chat.start()
         return chat
     }
+
+    /** [label], numbered past the titles of the open chats other than [self] (see [ChatNames.defaultName]). Any thread. */
+    private fun nameAmongOthers(label: String, self: Chat? = null): String =
+        ChatNames.defaultName(label, chats.filter { it !== self }.map { it.title })
 
     /**
      * Records HEAD as the diff base of a new chat in an existing checkout, off the EDT. A resumed session started

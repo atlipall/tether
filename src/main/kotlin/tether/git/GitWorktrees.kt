@@ -58,6 +58,9 @@ object WorktreeBranches {
     /** `<name>` for every `worktree-<name>` line of `git branch --list --format=%(refname:short)` output. */
     fun parse(output: String): Set<String> =
         output.lines().map { it.trim() }.filter { it.startsWith(PREFIX) }.map { it.removePrefix(PREFIX) }.filter { it.isNotEmpty() }.toSet()
+
+    /** What to call a checkout on [branch]: `<name>` for a `worktree-<name>` branch, otherwise the branch itself. */
+    fun displayName(branch: String): String = branch.removePrefix(PREFIX).ifEmpty { branch }
 }
 
 /** Runs `git branch --list` for the worktree branches in [dir]; null if git is missing, fails, or is slow. */

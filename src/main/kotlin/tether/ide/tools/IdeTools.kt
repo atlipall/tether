@@ -21,11 +21,15 @@ import java.io.File
 internal const val TOOL_TIMEOUT_MS = 30_000L
 private const val AFTER_EDIT_TIMEOUT_MS = 20_000L
 
-/** The IDE tools and edit checks one chat's Claude gets; [cwd] is the chat's current folder. */
+/**
+ * The IDE tools and edit checks one chat's Claude gets; [cwd] is the chat's current folder. The bug report tool is
+ * always lent; the others only while the IDE tools setting is on.
+ */
 class ChatIdeHost(internal val project: Project, private val projectDir: String, internal val cwd: () -> String) : IdeHost {
     private val settings get() = TetherSettings.getInstance().state
 
-    override val tools: List<McpTool> get() = if (settings.ideTools) readTools(this) + writeTools(this) else emptyList()
+    override val tools: List<McpTool> get() =
+        (if (settings.ideTools) readTools(this) + writeTools(this) else emptyList()) + BugReportTool(this)
 
     override val checksEdits: Boolean get() = settings.checkEdits
 

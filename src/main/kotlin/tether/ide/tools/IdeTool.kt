@@ -52,8 +52,10 @@ internal abstract class IdeTool(protected val host: ChatIdeHost, private val arg
 
     protected abstract fun run(args: JsonObject): ToolOutput
 
-    protected fun JsonObject.string(key: String): String =
-        str(key)?.trim()?.takeIf { it.isNotEmpty() } ?: throw ToolUnavailable("Give $key.")
+    protected fun JsonObject.string(key: String): String = optionalString(key) ?: throw ToolUnavailable("Give $key.")
+
+    /** The trimmed text of argument [key]; null when it is missing or blank. */
+    protected fun JsonObject.optionalString(key: String): String? = str(key)?.trim()?.takeIf { it.isNotEmpty() }
 
     protected fun JsonObject.int(key: String): Int = long(key)?.toInt() ?: throw ToolUnavailable("Give $key (a number).")
 

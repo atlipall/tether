@@ -1,5 +1,6 @@
 package tether.cli
 
+import tether.report.clipped
 import com.intellij.openapi.diagnostic.logger
 import java.io.BufferedWriter
 import java.io.File
@@ -10,7 +11,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 /** The command line and extra environment for an agent process. */
-class Launch(val command: List<String>, val env: Map<String, String>)
+class Launch(val command: List<String>, val env: Map<String, String>) {
+    /** The program's file name, as the IDE log names its stderr lines. */
+    val program: String get() = File(command.first()).name
+}
 
 /**
  * Runs an agent CLI and exchanges NDJSON over its stdin/stdout. [start] returns at once: [prepare] (which may block,
@@ -40,8 +44,10 @@ class ClaudeProcess(
         val queue = LinkedBlockingQueue<Any>()
         outbox = queue
         thread(isDaemon = true, name = "claude-launch") {
+            val launch: Launch
             val p = try {
-                spawn(prepare())
+                launch = prepare()
+                spawn(launch)
             } catch (e: Throwable) {
                 stopped.set(true)
                 outbox = null
@@ -50,7 +56,7 @@ class ClaudeProcess(
             }
             process = p
             if (stopped.get()) terminate(p)
-            run(p, queue, onLine, onExit)
+            run(p, launch.program, queue, onLine, onExit)
         }
     }
 
@@ -64,15 +70,18 @@ class ClaudeProcess(
     /**
      * Pumps [p]'s pipes until it exits; the stdin writer drains [queue], lines sent before the spawn included. The stdout
      * reader ends when [stop] closes the stream, or when the process goes away; either way it then refuses further sends
-     * and wakes the writer so it ends, before [onExit] gets the exit code and stderr's tail.
+     * and wakes the writer so it ends, before [onExit] gets the exit code and stderr's tail. Every stderr line is also
+     * logged at info level under [program]'s name and [clipped] to [MAX_LOGGED_STDERR] characters, so it is in the IDE log for bug reports even when the
+     * process lives on.
      */
-    private fun run(p: Process, queue: LinkedBlockingQueue<Any>, onLine: (String) -> Unit, onExit: (exitCode: Int, stderrTail: String) -> Unit) {
+    private fun run(p: Process, program: String, queue: LinkedBlockingQueue<Any>, onLine: (String) -> Unit, onExit: (exitCode: Int, stderrTail: String) -> Unit) {
         val stdin = p.outputStream.bufferedWriter(Charsets.UTF_8)
         stdinThread = thread(isDaemon = true, name = "claude-stdin") { writeLoop(stdin, queue) }
 
         val tail = ArrayDeque<String>()
         val stderrThread = thread(isDaemon = true, name = "claude-stderr") {
             p.errorStream.bufferedReader(Charsets.UTF_8).forEachLine { line ->
+                LOG.info("$program stderr: ${line.clipped(MAX_LOGGED_STDERR)}")
                 synchronized(tail) {
                     tail.addLast(line)
                     if (tail.size > 40) tail.removeFirst()
@@ -85,7 +94,7 @@ class ClaudeProcess(
                     try {
                         onLine(line)
                     } catch (e: Exception) {
-                        logger<ClaudeProcess>().warn("Listener failed on a claude output line", e)
+                        LOG.warn("Listener failed on a claude output line", e)
                     }
                 }
             } catch (_: IOException) {
@@ -140,6 +149,10 @@ class ClaudeProcess(
 
     companion object {
         private val CLOSE = Any()
+        private val LOG = logger<ClaudeProcess>()
+
+        /** Longest part of one stderr line that goes to the IDE log, so a one-line dump doesn't fill it and the reports. */
+        private const val MAX_LOGGED_STDERR = 1000
 
         /** Variables that would make claude bill an API account instead of the user's logged-in subscription. */
         private val STRIPPED = listOf("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")

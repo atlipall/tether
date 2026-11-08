@@ -6,6 +6,9 @@ import tether.session.Agent
 import tether.session.Chats
 import tether.session.Transcript
 import tether.session.OpenChats
+import tether.report.ReportBugAction
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.logger
@@ -22,6 +25,7 @@ import com.intellij.ui.jcef.JBCefApp
 
 class ChatToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
+        toolWindow.setAdditionalGearActions(DefaultActionGroup(ActionManager.getInstance().getAction(ReportBugAction.ID)))
         if (!JBCefApp.isSupported()) {
             val label = JBLabel("Tether needs JCEF, which is not available in this IDE runtime.")
             toolWindow.contentManager.addContent(ContentFactory.getInstance().createContent(label, null, false))

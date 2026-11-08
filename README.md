@@ -142,6 +142,21 @@ Set **Command** under **ACP Agent** to the command for an Agent Client Protocol 
 
 ACP agents keep their own authentication, model configuration and approval rules. Their advertised permission modes and approval choices are shown directly. Open ACP tabs can be restored through the agent's `session/load`; the past-session browser, archive, conversation rewind, Claude model/effort picker, IDE tools and new-worktree creation remain Claude-only. Images require the agent to advertise image support.
 
+## Reporting bugs
+
+Each of these opens a new GitHub issue in your browser with the Tether, IDE, OS and Claude Code versions, Tether's
+settings and its recent lines from the IDE log filled in. Paths under your home folder are shown as `~`. Nothing is
+sent until you review the issue and submit it on GitHub.
+
+- **Help → Report a Tether Bug…**, also in the Tether tool window's options menu (⋮).
+- **Report to Tether on GitHub** in the IDE's error dialog, for exceptions thrown by Tether.
+- **Ask Claude in a chat** to help you write a bug report. Its `bug_report` tool returns the same details so it can
+  work out what went wrong with you, then gives you a link to the filled-in issue. This works even when nothing has
+  failed, and stays available when IDE tools are turned off.
+
+Tether logs to the IDE log (**Help → Show Log in Finder**, lines with `#tether.`): its own warnings, everything the
+`claude` and ACP agent processes write to stderr, and the chat page's console errors.
+
 ## Development
 
 There is no system Java needed: `./gw` runs Gradle with WebStorm's bundled JBR
@@ -169,6 +184,7 @@ src/main/kotlin/tether/
   git/        worktree discovery and naming
   image/      image validation and scaling
   ide/        edit tracking, file links, editor actions
+  report/     bug reports: environment, IDE log, GitHub issue links
   ui/         tool window, tabs, JCEF bridge, popups
   settings/   settings and configurable
 src/main/resources/webview/   chat page (HTML/CSS/JS)

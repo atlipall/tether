@@ -29,6 +29,7 @@ window.runTasksTests = function () {
     assert(card('a1') && card('a2'), 'Both agents must be pinned');
     assert(!log().querySelector('.agent'), 'No agent card may stay in the log');
     assert(log().querySelectorAll('.agent-stub').length === 2, 'Each agent must leave a line in the log');
+    assert([...log().querySelectorAll('.agent-stub')].every((stub) => stub.hidden), 'A line must not repeat an agent shown above the message box');
     assert(card('a1').querySelector('.tool-name').textContent === 'apiary-expert', 'A pinned agent is labelled with its type');
   });
 
@@ -52,9 +53,11 @@ window.runTasksTests = function () {
   });
 
   test('the log line brings a dismissed agent back, opened', () => {
+    assert(!log().querySelector('.agent-stub .tool-row[data-id="a1"]').parentNode.hidden, 'A dismissed agent\'s line must show');
     log().querySelector('.agent-stub .tool-row[data-id="a1"]').click();
     assert(!card('a1').hidden, 'The agent must show again');
     assert(!card('a1').querySelector('.agent-body').hidden, 'The agent must open');
+    assert(log().querySelector('.agent-stub .tool-row[data-id="a1"]').parentNode.hidden, 'The line must hide again once the agent shows');
   });
 
   receive({ type: 'item', item: agentCall('a2', 'done') });
@@ -63,6 +66,7 @@ window.runTasksTests = function () {
   test('a new message clears away finished agents', () => {
     assert(card('a1').hidden && card('a2').hidden, 'Finished agents must go on the next message');
     assert(tasks().hidden, 'With nothing left the rows must hide');
+    assert([...log().querySelectorAll('.agent-stub')].every((stub) => !stub.hidden), 'Cleared agents must keep their lines in the log');
   });
 
   receive({ type: 'activity', phase: null });

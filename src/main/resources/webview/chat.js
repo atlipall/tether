@@ -746,7 +746,10 @@
     }
   }
 
-  /** The log's line for each pinned card, by card id: it marks where the agent started and brings the card back into view. */
+  /**
+   * The log's line for each pinned card, by card id: it marks where the agent started and brings the card back into view.
+   * It hides while its card shows above the message box, so the agent isn't listed twice (see [showStubs]).
+   */
   const stubs = new Map();
   /** Pinned cards the user dismissed (or that finished before a later message), by id; a running card always shows. */
   const dismissed = new Set();
@@ -807,10 +810,19 @@
   /** True while a reset replays the chat: the task rows are shown once at its end rather than after every item. */
   let replaying = false;
 
-  /** The task rows show while any row is visible. */
+  /** The task rows show while any row is visible, and each pinned card's log line only while the card does not. */
   function showTasks() {
     if (replaying) return;
     tasksEl.hidden = ![...tasksEl.children].some((c) => !c.hidden);
+    showStubs();
+  }
+
+  /** Shows the log line of each pinned card that is not in view above the message box, and hides the rest. */
+  function showStubs() {
+    for (const [id, stub] of stubs) {
+      const card = items.get(id);
+      stub.hidden = card.parentNode === tasksEl && !card.hidden;
+    }
   }
 
   /** "45s", "12m 5s" or "2h 3m": how long a background process has run. */

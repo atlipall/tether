@@ -95,7 +95,7 @@ class ChatBridge(
     /** Shows the IDE file chooser for images and calls back with the chosen files (EDT). Tests replace it. */
     internal var chooseImages: ((List<VirtualFile>) -> Unit) -> Unit = { done ->
         val descriptor = FileChooserDescriptorFactory.createMultipleFilesNoJarsDescriptor()
-            .withExtensionFilter("Images", "png", "jpg", "jpeg", "gif", "webp")
+            .withExtensionFilter("Images", "png", "jpg", "jpeg", "gif", "webp", "heic", "heif")
             .withTitle("Attach Images")
         FileChooser.chooseFiles(descriptor, project, null) { files -> done(files) }
     }

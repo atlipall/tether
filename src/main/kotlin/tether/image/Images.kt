@@ -72,10 +72,11 @@ object Images {
     const val PREVIEW_BYTES = 512 * 1024
     const val JPEG_QUALITY = 0.85f
 
-    const val NOT_AN_IMAGE = "not a PNG, JPEG, GIF or WebP image"
+    const val NOT_AN_IMAGE = "not a PNG, JPEG, GIF, WebP or HEIC image"
     const val UNREADABLE = "the image can't be read"
     const val TOO_MANY_PIXELS = "the image is too large to process"
     const val WEBP_TOO_LARGE = "WebP images over 5 MB or 2000 px can't be downscaled here"
+    const val HEIC_UNCONVERTIBLE = "HEIC photos can't be converted here; install libheif or ImageMagick, or export them as JPEG"
 
     /**
      * Whether `ImageIO` can decode WebP in this JVM. The JDK cannot; inside the IDE the bundled WebP plugin
@@ -104,9 +105,11 @@ object Images {
      * An image ready to send to Claude: as it is when it is at most [maxBytes] and its long edge at most [maxEdge];
      * otherwise scaled to fit [maxEdge] (aspect kept) and re-encoded — JPEG stays JPEG (quality 0.85), PNG/GIF become
      * PNG and fall back to JPEG when still too large. WebP is scaled like GIF when [webpDecodable], else refused.
-     * Even an image that fits is decoded in full, as a truncated or corrupt one would break the session.
+     * A HEIC photo is first converted to JPEG ([Heic.jpegIfHeic]) and refused when it can't be, so it blocks: never
+     * call it on the EDT. Even an image that fits is decoded in full, as a truncated or corrupt one would break the session.
      */
-    fun prepare(bytes: ByteArray, maxBytes: Int = MAX_BYTES, maxEdge: Int = MAX_EDGE): Prepared {
+    fun prepare(input: ByteArray, maxBytes: Int = MAX_BYTES, maxEdge: Int = MAX_EDGE): Prepared {
+        val bytes = Heic.jpegIfHeic(input) ?: return Prepared.Rejected(HEIC_UNCONVERTIBLE)
         val type = ImageType.sniff(bytes) ?: return Prepared.Rejected(NOT_AN_IMAGE)
         val (w, h) = dimensions(bytes, type) ?: return Prepared.Rejected(UNREADABLE)
         val fits = bytes.size <= maxBytes && max(w, h) <= maxEdge
@@ -263,7 +266,7 @@ object Images {
     }
 }
 
-private fun ByteArray.has(offset: Int, vararg expected: Any): Boolean {
+internal fun ByteArray.has(offset: Int, vararg expected: Any): Boolean {
     if (size < offset + expected.size) return false
     return expected.withIndex().all { (i, e) ->
         val want = when (e) {

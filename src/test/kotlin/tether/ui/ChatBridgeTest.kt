@@ -587,7 +587,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
         bridge.handle("""{"type":"ready"}""")
         upload("p1", Base64.getEncoder().encodeToString("hello world!".toByteArray()), name = "notes.txt")
         assertEquals(true, lastAttachment().bool("failed"))
-        assertEquals("Couldn't attach notes.txt: not a PNG, JPEG, GIF or WebP image.", notices().last())
+        assertEquals("Couldn't attach notes.txt: not a PNG, JPEG, GIF, WebP or HEIC image.", notices().last())
         assertEquals(0, chat.attachments.size)
     }
 

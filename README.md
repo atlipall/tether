@@ -60,7 +60,8 @@ already has (e.g. your Claude Pro subscription). The plugin never reads, stores 
   forgets that message and everything after it, the chat continues in a fork of the session, and the message
   returns to the input box.
 - **Images.** Paste, drop or pick (paperclip button) images to send with a message (PNG/JPEG/GIF/WebP, up to 10,
-  5 MB each, large ones downscaled). Images Claude reads, and local project images referenced in its
+  5 MB each, large ones downscaled). HEIC photos are converted to JPEG with `sips` on macOS, or `heif-convert` or
+  ImageMagick elsewhere. Images Claude reads, and local project images referenced in its
   replies, are shown inline. Remote images are never loaded.
 - **Up/Down recall** of previously sent messages, per project, across restarts.
 - **Add to Tether** (Cmd+Shift+Option+K, or the editor context menu) inserts `@path#Lx-y`

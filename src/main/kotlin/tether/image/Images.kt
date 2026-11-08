@@ -72,10 +72,11 @@ object Images {
     const val PREVIEW_BYTES = 512 * 1024
     const val JPEG_QUALITY = 0.85f
 
-    const val NOT_AN_IMAGE = "not a PNG, JPEG, GIF or WebP image"
+    const val NOT_AN_IMAGE = "not a PNG, JPEG, GIF, WebP or HEIC image"
     const val UNREADABLE = "the image can't be read"
     const val TOO_MANY_PIXELS = "the image is too large to process"
     const val WEBP_TOO_LARGE = "WebP images over 5 MB or 2000 px can't be downscaled here"
+    const val HEIC_UNCONVERTIBLE = "HEIC photos can't be converted here; install libheif or ImageMagick, or export them as JPEG"
 
     /**
      * Whether `ImageIO` can decode WebP in this JVM. The JDK cannot; inside the IDE the bundled WebP plugin
@@ -104,38 +105,46 @@ object Images {
      * An image ready to send to Claude: as it is when it is at most [maxBytes] and its long edge at most [maxEdge];
      * otherwise scaled to fit [maxEdge] (aspect kept) and re-encoded — JPEG stays JPEG (quality 0.85), PNG/GIF become
      * PNG and fall back to JPEG when still too large. WebP is scaled like GIF when [webpDecodable], else refused.
+     * A HEIC photo is first converted to JPEG ([Heic.jpegIfHeic]) and refused when it can't be, so it blocks: never
+     * call it on the EDT. A JPEG whose EXIF orientation isn't upright ([Orientation]) is always turned and re-encoded.
      * Even an image that fits is decoded in full, as a truncated or corrupt one would break the session.
      */
-    fun prepare(bytes: ByteArray, maxBytes: Int = MAX_BYTES, maxEdge: Int = MAX_EDGE): Prepared {
+    fun prepare(input: ByteArray, maxBytes: Int = MAX_BYTES, maxEdge: Int = MAX_EDGE): Prepared {
+        val bytes = Heic.jpegIfHeic(input) ?: return Prepared.Rejected(HEIC_UNCONVERTIBLE)
         val type = ImageType.sniff(bytes) ?: return Prepared.Rejected(NOT_AN_IMAGE)
         val (w, h) = dimensions(bytes, type) ?: return Prepared.Rejected(UNREADABLE)
-        val fits = bytes.size <= maxBytes && max(w, h) <= maxEdge
+        val orientation = Orientation.of(bytes)
+        val fits = orientation == Orientation.UPRIGHT && bytes.size <= maxBytes && max(w, h) <= maxEdge
         if (type == ImageType.WEBP && !webpDecodable()) {
             return if (fits) Prepared.Ok(Image(type, bytes, w, h)) else Prepared.Rejected(WEBP_TOO_LARGE)
         }
         if (w.toLong() * h > MAX_PIXELS) return Prepared.Rejected(TOO_MANY_PIXELS)
         val source = decode(bytes) ?: return Prepared.Rejected(UNREADABLE)
         if (fits) return Prepared.Ok(Image(type, bytes, w, h))
-        return fit(source, type, maxEdge, maxBytes)?.let { Prepared.Ok(it) } ?: Prepared.Rejected(TOO_LARGE)
+        return fit(source, orientation, type, maxEdge, maxBytes)?.let { Prepared.Ok(it) } ?: Prepared.Rejected(TOO_LARGE)
     }
 
     /**
-     * A copy to show in the chat: the bytes themselves when they fit [maxBytes] and [maxEdge] (an undecodable WebP:
-     * when it fits [maxBytes]; the page scales it), otherwise a scaled re-encoding as in [prepare]; null when nothing fits.
+     * A copy to show in the chat: the bytes themselves when they fit [maxBytes] and [maxEdge] and are upright (an
+     * undecodable WebP: when it fits [maxBytes]; the page scales it), otherwise a scaled, upright re-encoding as in
+     * [prepare]; null when nothing fits.
      */
     fun preview(bytes: ByteArray, maxEdge: Int = PREVIEW_EDGE, maxBytes: Int = PREVIEW_BYTES): Image? {
         val type = ImageType.sniff(bytes) ?: return null
         val (w, h) = dimensions(bytes, type) ?: return null
         val undecodable = type == ImageType.WEBP && !webpDecodable()
-        if (bytes.size <= maxBytes && (undecodable || max(w, h) <= maxEdge)) return Image(type, bytes, w, h)
+        val orientation = Orientation.of(bytes)
+        val showsAsIs = undecodable || (orientation == Orientation.UPRIGHT && max(w, h) <= maxEdge)
+        if (bytes.size <= maxBytes && showsAsIs) return Image(type, bytes, w, h)
         if (undecodable || w.toLong() * h > MAX_PIXELS) return null
         val source = decode(bytes) ?: return null
-        return fit(source, type, maxEdge, maxBytes)
+        return fit(source, orientation, type, maxEdge, maxBytes)
     }
 
     /**
-     * The decoded pixels, or null when the image cannot be read. A JPEG must reach its end-of-image marker
-     * ([isCompleteJpeg]): the JPEG reader accepts a cut-off file with only a warning. ImageIO closes the stream.
+     * The decoded pixels as stored (not yet turned by their [Orientation]), or null when the image cannot be read. A
+     * JPEG must reach its end-of-image marker ([isCompleteJpeg]): the JPEG reader accepts a cut-off file with only a
+     * warning. ImageIO closes the stream.
      */
     private fun decode(bytes: ByteArray): BufferedImage? {
         if (ImageType.sniff(bytes) == ImageType.JPEG && !isCompleteJpeg(bytes)) return null
@@ -180,14 +189,19 @@ object Images {
         }
     }
 
-    private fun fit(source: BufferedImage, type: ImageType, maxEdge: Int, maxBytes: Int): Image? {
+    /**
+     * [source] scaled to fit [maxEdge], turned the right way up by [orientation] (after scaling, so a large photo is
+     * never copied at full size) and encoded to at most [maxBytes]; null when it can't be brought that small.
+     */
+    private fun fit(source: BufferedImage, orientation: Orientation, type: ImageType, maxEdge: Int, maxBytes: Int): Image? {
         val scale = minOf(1.0, maxEdge.toDouble() / max(source.width, source.height))
-        val tw = max(1, (source.width * scale).roundToInt())
-        val th = max(1, (source.height * scale).roundToInt())
-        val scaled = resize(source, tw, th)
-        if (type == ImageType.JPEG) return jpeg(scaled).takeIf { it.size <= maxBytes }?.let { Image(ImageType.JPEG, it, tw, th) }
-        png(scaled).takeIf { it.size <= maxBytes }?.let { return Image(ImageType.PNG, it, tw, th) }
-        return jpeg(scaled).takeIf { it.size <= maxBytes }?.let { Image(ImageType.JPEG, it, tw, th) }
+        val sw = max(1, (source.width * scale).roundToInt())
+        val sh = max(1, (source.height * scale).roundToInt())
+        val upright = orientation.apply(resize(source, sw, sh))
+        val (tw, th) = upright.width to upright.height
+        if (type == ImageType.JPEG) return jpeg(upright).takeIf { it.size <= maxBytes }?.let { Image(ImageType.JPEG, it, tw, th) }
+        png(upright).takeIf { it.size <= maxBytes }?.let { return Image(ImageType.PNG, it, tw, th) }
+        return jpeg(upright).takeIf { it.size <= maxBytes }?.let { Image(ImageType.JPEG, it, tw, th) }
     }
 
     /** Halves the image until one more halving would pass the target, then draws it at the target size (bilinear). */
@@ -263,7 +277,16 @@ object Images {
     }
 }
 
-private fun ByteArray.has(offset: Int, vararg expected: Any): Boolean {
+internal fun ByteArray.u8(i: Int): Int = this[i].toInt() and 0xFF
+
+internal fun ByteArray.u16(i: Int, bigEndian: Boolean): Int =
+    if (bigEndian) (u8(i) shl 8) or u8(i + 1) else u8(i) or (u8(i + 1) shl 8)
+
+/** Four bytes as an unsigned number held in an [Int]: values over [Int.MAX_VALUE] come out negative. */
+internal fun ByteArray.u32(i: Int, bigEndian: Boolean): Int =
+    if (bigEndian) (u16(i, true) shl 16) or u16(i + 2, true) else u16(i, false) or (u16(i + 2, false) shl 16)
+
+internal fun ByteArray.has(offset: Int, vararg expected: Any): Boolean {
     if (size < offset + expected.size) return false
     return expected.withIndex().all { (i, e) ->
         val want = when (e) {

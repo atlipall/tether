@@ -426,9 +426,9 @@ class ChatSessionTest {
 
     @Test fun noticeIsShownInTheChat() {
         val s = session()
-        s.notice("Couldn't attach a.bmp: not a PNG, JPEG, GIF or WebP image.")
+        s.notice("Couldn't attach a.bmp: not a PNG, JPEG, GIF, WebP or HEIC image.")
         val notice = listener.latest<ChatItem.Notice>()
-        assertEquals("Couldn't attach a.bmp: not a PNG, JPEG, GIF or WebP image.", notice.text)
+        assertEquals("Couldn't attach a.bmp: not a PNG, JPEG, GIF, WebP or HEIC image.", notice.text)
         assertTrue(notice.isError)
     }
 

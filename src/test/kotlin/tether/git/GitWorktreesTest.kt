@@ -102,6 +102,12 @@ class GitWorktreesTest {
         assertEquals(emptySet<String>(), WorktreeBranches.parse(""))
     }
 
+    @Test fun displayNameDropsTheWorktreePrefix() {
+        assertEquals("wt-1", WorktreeBranches.displayName("worktree-wt-1"))
+        assertEquals("login-fix", WorktreeBranches.displayName("login-fix"))
+        assertEquals("worktree-", WorktreeBranches.displayName("worktree-"))
+    }
+
     @Test fun existingNamesIncludeLeftoverBranchesAndSurviveGitFailure() {
         val proj = tmp.newFolder("br")
         var asked: File? = null

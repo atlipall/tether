@@ -37,6 +37,7 @@ class ChatNamesTest {
 
     @Test fun projectChatIsNamedAfterTheBranch() {
         assertEquals("feature-x", ChatNames.branchLabel(ChatSpec.inProject("/p")) { "feature-x" })
+        assertEquals("wt-4", ChatNames.branchLabel(ChatSpec.inProject("/p")) { "worktree-wt-4" })
         assertEquals("main", ChatNames.branchLabel(ChatSpec.inProject("/p")) { null })
         assertEquals("wt-2", ChatNames.branchLabel(ChatSpec.newWorktree("/p", "wt-2")) { "feature-x" })
         assertEquals("wt-3", ChatNames.branchLabel(ChatSpec.existingWorktree("/p/.claude/worktrees/wt-3")) { "worktree-wt-3" })

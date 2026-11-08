@@ -8,6 +8,8 @@ import tether.cli.SessionLaunch
 import tether.context.ContextNotes
 import tether.context.EditorContext
 import tether.git.WorkingTrees
+import tether.git.WorktreeBranches
+import tether.git.currentBranch
 import tether.image.Attachment
 import tether.image.ImageFiles
 import tether.image.PendingAttachments
@@ -139,10 +141,12 @@ class Chat(
     private val acpSession: (List<String>, ChatListener) -> AgentSession = { _, _ -> error("No ACP agent is configured.") },
     /** Called on the EDT when the user selects an agent for the draft. */
     private val onAgentSelected: (Agent) -> Unit = {},
-    /** The name shown until the user gives one (`main`, `main 2`, a worktree name). */
-    private val defaultName: String = spec.label,
+    /** The name shown until the user gives one (`main`, `main 2`, a worktree name); follows later branch moves, see [followBranch]. */
+    defaultName: String = spec.label,
     /** Stores a name the user gave in the session's transcript (blank: none), marked archived or not. Called off the EDT. */
     private val saveTitle: ((cwd: String, sessionId: String, title: String, archived: Boolean) -> Unit)? = null,
+    /** The default name for a chat moved to a branch shown as the given name, numbered past the other chats' names. */
+    private val nameForBranch: (String) -> String = { it },
 ) {
     val label: String = spec.label
 
@@ -163,7 +167,10 @@ class Chat(
     private val titleWriteLock = Any()
     @Volatile private var archived = false
 
-    /** Called on the EDT when [title] changes. */
+    /**
+     * Called when [title] changes: on the EDT when the user renames the chat, and with the session lock held, on
+     * whichever thread reported the session's state, when it follows a branch move ([followBranch]).
+     */
     @Volatile var onTitleChanged: (() -> Unit)? = null
 
     /** Called on the CLI reader thread, with the session lock held, when [cwd] changes (system/init reported another folder). */
@@ -285,6 +292,7 @@ class Chat(
                 knownCwd = now
                 onCwdChanged?.invoke()
             }
+            followBranch()
         }
     }
 
@@ -323,6 +331,37 @@ class Chat(
     val cwd: String get() = if (session.cwdReported) session.cwd else predictedCwd ?: session.cwd
 
     val title: String get() = customTitle ?: defaultName
+
+    /** The name shown while the user has given none; starts as the constructor's and follows branch moves ([followBranch]). */
+    @Volatile private var defaultName: String = defaultName
+
+    /**
+     * The branch [cwd] was last seen on; null while unknown (detached, or a new worktree whose folder system/init has
+     * not yet reported). A branch first seen after null counts as a move, so a new worktree's `worktree-<name>` branch
+     * names it `<name>`.
+     */
+    @Volatile private var knownBranch: String? = if (cwdIsGuess) null else currentBranch(cwd)
+
+    /** True while [cwd] is a new worktree's predicted folder, whose lookups would find the project's checkout instead. */
+    private val cwdIsGuess: Boolean get() = predictedCwd != null && !session.cwdReported
+
+    /**
+     * Names the chat after the branch its checkout is on now, when that differs from the one last seen: a branch
+     * created or switched to, or the branch of a folder the chat moved to. The default name changes even when the user
+     * named the chat, so clearing that name shows the current branch; only an unnamed chat's [title] changes.
+     * Detached HEAD keeps the name. Checked only when this chat's session changes state, so an idle chat on the same
+     * checkout catches up with its next turn. Session lock held.
+     */
+    private fun followBranch() {
+        if (cwdIsGuess) return
+        val branch = currentBranch(cwd) ?: return
+        if (branch == knownBranch) return
+        knownBranch = branch
+        val name = nameForBranch(WorktreeBranches.displayName(branch))
+        if (name == defaultName) return
+        defaultName = name
+        if (customTitle == null) onTitleChanged?.invoke()
+    }
 
     /** Renames the chat; a blank [name] restores the default. The name is saved with the session, now or once it has an id. EDT. */
     fun rename(name: String) {

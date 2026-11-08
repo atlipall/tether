@@ -23,8 +23,8 @@ class ChatTabs(private val project: Project, private val toolWindow: ToolWindow)
 
     /**
      * Opens [spec]'s chat in a new, selected tab. The [Chats] service is captured up front, since it may be unreachable
-     * while the project is closing, when the tab is disposed. The tab's name follows the chat's title ([Chat.rename]
-     * runs on the EDT).
+     * while the project is closing, when the tab is disposed. The tab's name follows the chat's title, set on the EDT
+     * since a branch move renames the chat from the CLI reader thread.
      */
     fun open(spec: ChatSpec, resumed: Transcript? = chats.read(spec)): Chat {
         val registry = chats
@@ -38,7 +38,9 @@ class ChatTabs(private val project: Project, private val toolWindow: ToolWindow)
         content.component = panel.browser.component
         content.preferredFocusableComponent = panel.browser.component
         showBusyIcon(content, chat, closed)
-        chat.onTitleChanged = { content.displayName = chat.title }
+        chat.onTitleChanged = {
+            ApplicationManager.getApplication().invokeLater({ if (!closed.get()) content.displayName = chat.title }, project.disposed)
+        }
         val follower = CheckoutFollower.getInstance(project)
         chat.onCwdChanged = {
             ApplicationManager.getApplication().invokeLater({ follower.refresh() }, project.disposed)

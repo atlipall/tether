@@ -1,6 +1,7 @@
 package tether.session
 
 import tether.cli.PermissionMode
+import tether.git.WorktreeBranches
 import tether.git.canonicalPath
 import tether.git.currentBranch
 
@@ -77,9 +78,13 @@ object ChatNames {
     fun folderLabel(folder: String, projectDir: String): String =
         if (canonicalPath(folder) == canonicalPath(projectDir)) ChatSpec.MAIN else lastSegment(folder)
 
-    /** A project-folder chat ([ChatSpec.MAIN]) is named after the checked-out branch, if any; others keep [ChatSpec.label]. */
+    /**
+     * A project-folder chat ([ChatSpec.MAIN]) is named after the checked-out branch, if any (as
+     * [WorktreeBranches.displayName] shows it); others keep [ChatSpec.label].
+     */
     fun branchLabel(spec: ChatSpec, branch: (String) -> String? = ::currentBranch): String =
-        if (spec.label == ChatSpec.MAIN && spec.worktree == null) branch(spec.cwd) ?: ChatSpec.MAIN else spec.label
+        if (spec.label == ChatSpec.MAIN && spec.worktree == null) branch(spec.cwd)?.let(WorktreeBranches::displayName) ?: ChatSpec.MAIN
+        else spec.label
 
     fun lastSegment(path: String): String = path.trimEnd('/').substringAfterLast('/')
 }

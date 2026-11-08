@@ -10,34 +10,105 @@
   <style>
     :root {
       color-scheme: light dark;
-      --text: light-dark(#1d1d1f, #f5f5f7);
-      --secondary: light-dark(#5e5e63, #a1a1a6);
-      --background: light-dark(#ffffff, #1c1c1e);
-      --surface: light-dark(#f5f5f7, #2c2c2e);
-      --separator: light-dark(#d2d2d7, #3a3a3c);
-      --accent: light-dark(#0066cc, #4da3ff);
+      --text: light-dark(#141413, #f0eee6);
+      --secondary: light-dark(#5e5d59, #a8a69e);
+      --background: light-dark(#faf9f5, #1f1e1d);
+      --surface: light-dark(#f0eee6, #2a2927);
+      --card: light-dark(#ffffff, #262524);
+      --separator: light-dark(#e3e0d6, #3a3936);
+      --accent: light-dark(#b8532f, #e8906f);
+      --button: light-dark(#141413, #f0eee6);
+      --button-text: light-dark(#faf9f5, #141413);
+      --serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       color: var(--text);
       background: var(--background);
+      -webkit-font-smoothing: antialiased;
     }
-    main { max-width: 42rem; margin: 0 auto; padding: 4rem 1.5rem 3rem; }
-    header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
-    header img { width: 3.5rem; height: 3.5rem; flex: none; }
-    h1 { font-size: 2.25rem; line-height: 1.15; margin: 0; letter-spacing: -0.02em; }
-    h2 { font-size: 1.375rem; margin: 2.75rem 0 0.75rem; }
-    p, li { color: var(--text); }
-    .lead { font-size: 1.25rem; color: var(--secondary); margin: 0 0 1.5rem; }
+    .narrow { max-width: 44rem; margin-inline: auto; padding-inline: 1.5rem; }
+    .wide { max-width: 84rem; margin-inline: auto; padding-inline: 1.5rem; }
+
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-    .links { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; margin: 0; padding: 0; list-style: none; }
-    .version { color: var(--secondary); font-size: 0.9375rem; }
-    ol, ul { padding-left: 1.4rem; }
-    li { margin: 0.4rem 0; }
+    a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+    nav { display: flex; align-items: center; justify-content: space-between; padding-block: 1.25rem; }
+    .brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 600; color: var(--text); }
+    .brand:hover { text-decoration: none; }
+    .brand img { width: 1.75rem; height: 1.75rem; }
+    nav ul { display: flex; gap: 1.5rem; margin: 0; padding: 0; list-style: none; font-size: 0.9375rem; }
+    nav ul a { color: var(--secondary); }
+    nav ul a:hover { color: var(--text); text-decoration: none; }
+
+    h1, h2 { font-family: var(--serif); font-weight: 500; letter-spacing: -0.02em; }
+    h1 { font-size: clamp(2.5rem, 6vw, 4rem); line-height: 1.05; margin: 0 0 1.25rem; }
+    h2 { font-size: clamp(1.75rem, 4vw, 2.25rem); line-height: 1.15; margin: 0 0 1rem; }
+
+    .hero { max-width: 60rem; text-align: center; margin-top: 4.5rem; margin-bottom: 3rem; }
+    .hero h1 { margin-bottom: 2rem; }
+    .eyebrow { font-size: 0.875rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); margin: 0 0 1rem; }
+    .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; }
+    .button {
+      display: inline-block;
+      padding: 0.7rem 1.35rem;
+      border-radius: 10px;
+      font-weight: 500;
+      border: 1px solid var(--button);
+      background: var(--button);
+      color: var(--button-text);
+    }
+    .button:hover { text-decoration: none; opacity: 0.88; }
+    .button.secondary { background: transparent; color: var(--text); border-color: var(--separator); }
+    .button.secondary:hover { opacity: 1; border-color: var(--text); }
+    .note { margin: 1rem 0 0; font-size: 0.9375rem; color: var(--secondary); }
+
+    .showcase {
+      margin: 0;
+      padding: clamp(0.5rem, 1.5vw, 1.25rem);
+      border-radius: 18px;
+      background: linear-gradient(160deg, #e8906f 0%, #d97757 45%, #c4603f 100%);
+    }
+    .showcase img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 12px;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 24px 60px -12px rgb(60 20 5 / 0.45);
+    }
+
+    .intro { display: grid; grid-template-columns: 3fr 2fr; gap: 3rem; align-items: center; }
+    .intro-heading { text-align: center; }
+    .intro-text { margin: 0 auto 2rem; max-width: 60rem; color: var(--secondary); font-size: 1.0625rem; }
+    @media (max-width: 64rem) {
+      .intro { grid-template-columns: 1fr; gap: 2rem; }
+    }
+
+    section { margin-top: 5rem; }
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.75rem; }
+    .feature { padding: 1rem 1.1rem; border: 1px solid var(--separator); border-radius: 14px; background: var(--card); }
+    .feature h3 { margin: 0 0 0.35rem; font-size: 1.0625rem; font-weight: 600; }
+    .feature p { margin: 0; color: var(--secondary); font-size: 0.96875rem; }
+
+    .steps { counter-reset: step; list-style: none; padding: 0; margin: 1.5rem 0; }
+    .steps > li { counter-increment: step; position: relative; padding-left: 2.75rem; margin: 0 0 1.25rem; }
+    .steps > li::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0.05rem;
+      width: 1.85rem;
+      height: 1.85rem;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--surface);
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
     code {
       font: 0.875em ui-monospace, "SF Mono", Menlo, monospace;
       background: var(--surface);
@@ -49,74 +120,89 @@
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      margin: 0.5rem 0;
+      margin: 0.6rem 0 0;
       padding: 0.5rem 0.5rem 0.5rem 1rem;
       border: 1px solid var(--separator);
-      border-radius: 8px;
-      background: var(--surface);
+      border-radius: 10px;
+      background: var(--card);
     }
     .repository-url code { flex: 1; padding: 0; background: none; user-select: all; }
     .copy-button {
       flex: none;
       min-width: 5.5rem;
-      padding: 0.35rem 0.85rem;
+      padding: 0.4rem 0.9rem;
       font: inherit;
       font-size: 0.9375rem;
-      color: var(--accent);
-      background: var(--background);
-      border: 1px solid var(--separator);
-      border-radius: 6px;
+      font-weight: 500;
+      color: var(--button-text);
+      background: var(--button);
+      border: none;
+      border-radius: 8px;
       cursor: pointer;
     }
-    .copy-button:hover { border-color: var(--accent); }
-    .copy-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    footer { margin-top: 3.5rem; padding-top: 1.25rem; border-top: 1px solid var(--separator); color: var(--secondary); font-size: 0.9375rem; }
+    .copy-button:hover { opacity: 0.88; }
+    .version { color: var(--secondary); font-size: 0.9375rem; }
+
+    footer { padding-top: 1.5rem; margin-top: 5rem; margin-bottom: 2.5rem; border-top: 1px solid var(--separator); color: var(--secondary); font-size: 0.9375rem; }
   </style>
 </head>
 <body>
-<main>
-  <header>
-    <img src="icon.svg" alt="" width="56" height="56">
-    <h1>Tether for coding agents</h1>
-  </header>
-  <p class="lead">A native chat panel for coding agents inside JetBrains IDEs.</p>
-  <ul class="links">
-    <li><a href="https://github.com/atlipall/tether">Source on GitHub</a></li>
-    <li><a href="https://github.com/atlipall/tether/releases">Releases</a></li>
-    <li><a href="https://github.com/atlipall/tether#readme">Documentation</a></li>
-  </ul>
-
-  <h2>What it is</h2>
-  <p>
-    Tether runs the <a href="https://docs.claude.com/en/docs/claude-code">Claude Code</a> CLI, and
-    Agent Client Protocol agents such as Hermes, in a tool window in the IDE. It uses the agents you
-    already have installed and their existing logins, and never reads, stores or forwards credentials.
-  </p>
+<nav class="wide" aria-label="Site">
+  <a class="brand" href="./"><img src="icon.svg" alt="" width="28" height="28">Tether</a>
   <ul>
-    <li>Several chats at once, each in its own tab, including chats in separate git worktrees.</li>
-    <li>Files the agent reads or edits are links, and every edit has a diff.</li>
-    <li>The agent sees your current file, selection and caret, and which files you edited or what you did in git between messages.</li>
-    <li>The agent can use the IDE's diagnostics, find usages, quick fixes and rename and move refactorings.</li>
-    <li>Errors in the agent's edits are reported back to it in the same turn.</li>
-    <li>Revert files, the conversation or both to how they were before any message.</li>
+    <li><a href="https://github.com/atlipall/tether#readme">Docs</a></li>
+    <li><a href="https://github.com/atlipall/tether/releases">Releases</a></li>
+    <li><a href="https://github.com/atlipall/tether">GitHub</a></li>
   </ul>
+</nav>
 
-  <h2>Install</h2>
-  <p>Tether needs a 2026.2 JetBrains IDE (build 262 or later) and <a href="https://docs.claude.com/en/docs/claude-code">Claude Code</a> installed and logged in.</p>
-  <ol>
-    <li>In the IDE, open <strong>Settings → Plugins</strong>, click <strong>⚙︎</strong> and choose <strong>Manage Plugin Repositories…</strong></li>
-    <li>Add this URL:
-      <span class="repository-url">
-        <code id="repository-url">https://atlipall.github.io/tether/updatePlugins.xml</code>
-        <button type="button" class="copy-button" data-copies="repository-url" aria-label="Copy the repository URL">Copy</button>
-      </span>
-    </li>
-    <li>Search the <strong>Marketplace</strong> tab for <strong>Tether</strong>, install it and restart the IDE.</li>
-  </ol>
-  <p>New versions then appear as regular plugin updates in the IDE.</p>
-  <p class="version">Latest version: {{VERSION}}</p>
+<main>
+  <header class="hero narrow">
+    <p class="eyebrow">JetBrains IDE plugin</p>
+    <h1>Tether for coding agents</h1>
+    <div class="actions">
+      <a class="button" href="#install">Install Tether</a>
+      <a class="button secondary" href="https://github.com/atlipall/tether">View on GitHub</a>
+    </div>
+    <p class="note">Free and open source under the MIT License</p>
+  </header>
 
-  <footer>
+  <div class="wide intro-heading">
+    <p class="intro-text">A native chat panel in JetBrains IDEs for Claude Code or another <a href="https://agentclientprotocol.com">ACP</a> agent, using the install and login you already have.</p>
+  </div>
+  <div class="wide intro">
+    <figure class="showcase">
+      <img src="screenshot.webp" width="2000" height="1258"
+           alt="A JetBrains IDE with the Tether panel on the right, showing two chats in tabs and Claude running three reviewer subagents, each with its progress, tool count and elapsed time.">
+    </figure>
+    <div class="features">
+      <div class="feature"><h3>Many chats at once</h3><p>Each chat gets its own tab, including chats in separate git worktrees.</p></div>
+      <div class="feature"><h3>Links and diffs</h3><p>Files the agent reads or edits are links, and every edit has a diff.</p></div>
+      <div class="feature"><h3>Knows what you're doing</h3><p>Your current file, selection and caret, and what you edited or did in git between messages.</p></div>
+      <div class="feature"><h3>Uses the IDE's tools</h3><p>Diagnostics, find usages, quick fixes, and rename and move refactorings.</p></div>
+      <div class="feature"><h3>Catches its own errors</h3><p>Errors in the agent's edits are reported back to it in the same turn.</p></div>
+      <div class="feature"><h3>Rewind</h3><p>Revert files, the conversation or both to how they were before any message.</p></div>
+    </div>
+  </div>
+
+  <section class="narrow" id="install">
+    <h2>Install</h2>
+    <p>Tether needs a 2026.2 JetBrains IDE (build 262 or later) and <a href="https://docs.claude.com/en/docs/claude-code">Claude Code</a> installed and logged in.</p>
+    <ol class="steps">
+      <li>In the IDE, open <strong>Settings → Plugins</strong>, click <strong>⚙︎</strong> and choose <strong>Manage Plugin Repositories…</strong></li>
+      <li>Add this URL:
+        <span class="repository-url">
+          <code id="repository-url">https://atlipall.github.io/tether/updatePlugins.xml</code>
+          <button type="button" class="copy-button" data-copies="repository-url" aria-label="Copy the repository URL">Copy</button>
+        </span>
+      </li>
+      <li>Search the <strong>Marketplace</strong> tab for <strong>Tether</strong>, install it and restart the IDE.</li>
+    </ol>
+    <p>New versions then appear as regular plugin updates in the IDE.</p>
+    <p class="version">Latest version: {{VERSION}}</p>
+  </section>
+
+  <footer class="narrow">
     By Atli Páll Hafsteinsson · <a href="https://github.com/atlipall/tether">github.com/atlipall/tether</a>
   </footer>
 </main>

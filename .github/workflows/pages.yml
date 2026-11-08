@@ -39,6 +39,7 @@ jobs:
           version=$(jq -r '.tagName | ltrimstr("v")' release.json)
           sed "s/{{VERSION}}/$version/" .github/pages/index.html > site/index.html
           cp src/main/resources/META-INF/pluginIcon.svg site/icon.svg
+          cp .github/pages/screenshot.webp site/
           python3 .github/scripts/plugin_repository.py \
             --zip "release/$(jq -r '.assets[] | select(.name | endswith(".zip")) | .name' release.json)" \
             --url "$(jq -r '.assets[] | select(.name | endswith(".zip")) | .url' release.json)" \

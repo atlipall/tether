@@ -12,8 +12,9 @@ import kotlin.math.roundToInt
 /**
  * HEIC and HEIF photos, as iPhones and recent Macs take them. Claude doesn't accept them and the JVM can't decode
  * them, so an attached one is converted to JPEG by a converter the system has: `sips` on macOS, otherwise libheif's
- * `heif-convert` or ImageMagick when either is on the `PATH`. Those apply the file's rotation and mirroring, so the
- * JPEG is upright; `sips` and ImageMagick also shrink one larger than [Images.MAX_EDGE] to fit it, so even a 48 MP
+ * `heif-convert` or ImageMagick when either is on the `PATH`. `sips` keeps an iPhone photo's pixels as the sensor
+ * saw them and records the turn as an EXIF orientation, which [Images] then applies ([Orientation]). `sips` and
+ * ImageMagick also shrink one larger than [Images.MAX_EDGE] to fit it, so even a 48 MP
  * photo stays under [Images.MAX_PIXELS]. The generic `mif1`/`msf1` brands are taken too, so an AVIF using one goes the same way. No IDE
  * API; runs external tools.
  */
@@ -69,13 +70,9 @@ object Heic {
      * The longest edge among the image sizes (`ispe` properties) in the first [SIZE_SEARCH_BYTES], or 0 when none is
      * found. The full image is the largest: the others are its tiles and thumbnail.
      */
-    internal fun longEdge(b: ByteArray): Int {
-        fun u32(i: Int) = ((b[i].toInt() and 0xFF) shl 24) or ((b[i + 1].toInt() and 0xFF) shl 16) or
-            ((b[i + 2].toInt() and 0xFF) shl 8) or (b[i + 3].toInt() and 0xFF)
-        return (0..minOf(b.size, SIZE_SEARCH_BYTES) - 16)
-            .filter { b.has(it, 'i', 's', 'p', 'e') }
-            .maxOfOrNull { maxOf(u32(it + 8), u32(it + 12)) } ?: 0
-    }
+    internal fun longEdge(b: ByteArray): Int = (0..minOf(b.size, SIZE_SEARCH_BYTES) - 16)
+        .filter { b.has(it, 'i', 's', 'p', 'e') }
+        .maxOfOrNull { maxOf(b.u32(it + 8, bigEndian = true), b.u32(it + 12, bigEndian = true)) } ?: 0
 
     /**
      * Writes [bytes] to a temporary folder and runs [CONVERTERS] there, moving on only past ones that aren't

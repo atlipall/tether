@@ -1,5 +1,7 @@
 package tether.cli
 
+import java.io.File
+
 enum class PermissionMode(val cli: String, val label: String) {
     DEFAULT("default", "Ask before edits"),
     ACCEPT_EDITS("acceptEdits", "Accept edits"),
@@ -59,4 +61,8 @@ object ClaudeBinary {
         val fallbacks = listOf("$home/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude")
         return (fromPath + fallbacks).firstOrNull(isExecutable)
     }
+
+    /** The claude to run for the [configured] path, looked up in the shell environment [env]; null when there is none. */
+    fun find(configured: String, env: Map<String, String>): String? =
+        resolve(configured, env["PATH"], System.getProperty("user.home")) { File(it).canExecute() }
 }

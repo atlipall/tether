@@ -25,6 +25,7 @@
         <toolWindow id="Tether" anchor="right" icon="/icons/tether.svg"
                     canCloseContents="true" factoryClass="tether.ui.ChatToolWindowFactory"/>
         <notificationGroup id="Tether" displayType="STICKY_BALLOON"/>
+        <errorHandler implementation="tether.report.TetherErrorReporter"/>
         <intentionAction>
             <language/>
             <className>tether.ide.FixWithTether</className>
@@ -54,6 +55,10 @@
         <action id="tether.SendConsoleToTether" class="tether.ide.SendConsoleToTether"
                 text="Send to Tether" description="Put the selected console output (or all of it) into the Tether chat">
             <add-to-group group-id="ConsoleView.PopupMenu" anchor="last"/>
+        </action>
+        <action id="tether.ReportBug" class="tether.report.ReportBugAction"
+                text="Report a Tether Bug…" description="Open a new Tether issue on GitHub with versions and Tether's recent log filled in">
+            <add-to-group group-id="HelpMenu" anchor="after" relative-to-action="ReportProblem"/>
         </action>
     </actions>
 </idea-plugin>

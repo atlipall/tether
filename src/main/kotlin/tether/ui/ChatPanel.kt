@@ -12,7 +12,9 @@ import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
 import org.cef.browser.CefBrowser
+import org.cef.CefSettings
 import org.cef.browser.CefFrame
+import org.cef.handler.CefDisplayHandlerAdapter
 import org.cef.handler.CefLoadHandlerAdapter
 import org.cef.handler.CefRequestHandler
 import org.cef.handler.CefRequestHandlerAdapter
@@ -22,7 +24,8 @@ import org.cef.network.CefRequest
  * JCEF browser hosting one chat's page, wired to a [ChatBridge] bound to that chat. The page follows IDE theme and
  * editor colour scheme changes, and is reloaded (a few times at most) when its renderer process dies; a reload of the
  * page itself is the only main-frame navigation allowed once it has loaded. Files dropped on the panel become
- * attachments through a Swing [FileDrop], as the off-screen browser passes no native drops to the page.
+ * attachments through a Swing [FileDrop], as the off-screen browser passes no native drops to the page. The page's
+ * console errors and warnings go to the IDE log through a [PageConsole].
  */
 class ChatPanel(private val project: Project, private val chat: Chat, parent: Disposable) : Disposable {
     val browser = JBCefBrowser()
@@ -32,6 +35,7 @@ class ChatPanel(private val project: Project, private val chat: Chat, parent: Di
     @Volatile private var disposed = false
     /** Reloads after a renderer crash so far; capped by [MAX_RELOADS] so a page that keeps crashing stays down. */
     @Volatile private var reloads = 0
+    private val console = PageConsole()
 
     init {
         Disposer.register(parent, this)
@@ -53,6 +57,12 @@ class ChatPanel(private val project: Project, private val chat: Chat, parent: Di
                 cefBrowser.executeJavaScript(js, cefBrowser.url, 0)
             }
         }, browser.cefBrowser)
+        browser.jbCefClient.addDisplayHandler(object : CefDisplayHandlerAdapter() {
+            override fun onConsoleMessage(cefBrowser: CefBrowser, level: CefSettings.LogSeverity, message: String, source: String, line: Int): Boolean {
+                console.report(level, message, source, line)
+                return false
+            }
+        }, browser.cefBrowser)
         browser.jbCefClient.addRequestHandler(object : CefRequestHandlerAdapter() {
             override fun onBeforeBrowse(
                 cefBrowser: CefBrowser, frame: CefFrame, request: CefRequest, userGesture: Boolean, isRedirect: Boolean,
@@ -70,6 +80,7 @@ class ChatPanel(private val project: Project, private val chat: Chat, parent: Di
     /** Loads the page afresh, as a new first load: its URL becomes the one page allowed. The bridge then re-sends everything. */
     private fun reloadPage() {
         pageUrl = null
+        console.reset()
         browser.loadHTML(WebAssets.page())
     }
 

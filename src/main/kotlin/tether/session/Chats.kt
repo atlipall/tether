@@ -233,9 +233,7 @@ class Chats(private val project: Project) : Disposable {
         val extraArgs = ParametersListUtil.parse(settings.extraArgs.orEmpty())
         return ClaudeProcess(File(launch.cwd)) {
             val env = EnvironmentUtil.getEnvironmentMap()
-            val binary = ClaudeBinary.resolve(claudePath, env["PATH"], System.getProperty("user.home")) {
-                File(it).canExecute()
-            } ?: throw ClaudeNotFoundException()
+            val binary = ClaudeBinary.find(claudePath, env) ?: throw ClaudeNotFoundException()
             Launch(ClaudeCommand.build(binary, launch, extraArgs), env)
         }
     }

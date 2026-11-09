@@ -84,31 +84,42 @@ object TetherMessages {
     /**
      * Asks Claude why [change] was made: a hunk is quoted as a diff, with the diff's side titles when it came from one,
      * and a committed line is left for Claude to trace with git blame.
+     *
+     * The chat webview recognises these texts by their fixed wording ([EXPLAIN_WORDING]; `explainRequest` in `chat.js`)
+     * and shows them as a collapsed row like a tool call's, with the quoted hunk behind a disclosure toggle and the
+     * instructions left out, so a change to the wording here needs the same change there.
      */
     fun explainChange(change: ChangeToExplain): String = when (change) {
         is ChangeToExplain.CommittedLine -> {
             val where = Mention.format(change.path, change.line, null)
-            "Explain why $where is the way it is. Find the commit that last changed it " +
-                "(`git blame -L ${change.line},${change.line} -- ${change.path}`), read that commit's message and diff, " +
-                "and explain why the change was made. $WHY_NOT_WHAT"
+            "Explain why $where$LINE_FIND_COMMIT(`git blame -L ${change.line},${change.line} -- ${change.path}`)$LINE_EXPLAIN_COMMIT$WHY_NOT_WHAT"
         }
         is ChangeToExplain.Hunk -> buildString {
             val where = Mention.format(change.path, change.firstLine, change.lastLine)
             when (val origin = change.origin) {
                 is ChangeToExplain.Origin.Diff -> {
-                    append("Explain why this change at ").append(where).append(" was made")
+                    append(HUNK_IN_DIFF).append(where).append(HUNK_WAS_MADE)
                     titlesOf(origin)?.let { append(" (").append(it).append(')') }
                     append(':')
                 }
-                ChangeToExplain.Origin.Uncommitted -> append("Explain this uncommitted change at ").append(where).append(':')
+                ChangeToExplain.Origin.Uncommitted -> append(HUNK_UNCOMMITTED).append(where).append(':')
             }
             append("\n```diff\n").append(fenceSafe(diffOf(change))).append("\n```\n")
-            append("Use the git history of these lines (commit messages, `git log -L`, blame) and the surrounding code. ")
-            append(WHY_NOT_WHAT)
+            append(USE_HISTORY).append(' ').append(WHY_NOT_WHAT)
         }
     }
 
+    private const val HUNK_IN_DIFF = "Explain why this change at "
+    private const val HUNK_WAS_MADE = " was made"
+    private const val HUNK_UNCOMMITTED = "Explain this uncommitted change at "
+    private const val LINE_FIND_COMMIT = " is the way it is. Find the commit that last changed it "
+    private const val LINE_EXPLAIN_COMMIT = ", read that commit's message and diff, and explain why the change was made. "
+    private const val USE_HISTORY = "Use the git history of these lines (commit messages, `git log -L`, blame) and the surrounding code."
     private const val WHY_NOT_WHAT = "Focus on why it changed, not a line-by-line restatement of what changed."
+
+    /** The fixed parts of [explainChange]'s messages, which the chat webview matches word for word. */
+    internal val EXPLAIN_WORDING = listOf(HUNK_IN_DIFF, HUNK_WAS_MADE, HUNK_UNCOMMITTED, LINE_FIND_COMMIT, LINE_EXPLAIN_COMMIT, USE_HISTORY, WHY_NOT_WHAT)
+
     private const val MAX_HUNK_LINES = 200
 
     /** The diff's side titles as "before → after", or null when it has none. */

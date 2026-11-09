@@ -327,7 +327,10 @@
     if (onReply) onReply(value);
   }
 
-  /** A user message: its text is plain, never markup, with its web addresses as links. */
+  /**
+   * A user message: its text is plain, never markup, with its web addresses as links; an "Explain This Change" request
+   * shows as a collapsed row instead (see [renderExplainRequest]).
+   */
   function renderUser(el, item) {
     el.className = 'msg user';
     if (item.revertable) {
@@ -336,7 +339,98 @@
     }
     const images = Array.isArray(item.images) ? item.images : [];
     if (images.length) el.append(h('div', { class: 'thumbs' }, ...images.map((src, index) => openableImage(src, '[image]', { item: item.id, index }))));
-    if (item.text) el.append(withLinks(item.text));
+    const request = explainRequest(item.text);
+    if (request) renderExplainRequest(el, request, item.id);
+    else if (item.text) el.append(withLinks(item.text));
+  }
+
+  /** [text] matched literally inside a regular expression. */
+  const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  /** A regular expression matching all of a text made of [pieces]: plain strings literally, regular expressions as they are. */
+  const wholeText = (...pieces) =>
+    new RegExp('^' + pieces.map((p) => (typeof p === 'string' ? escapeRe(p) : p.source)).join('') + '$');
+
+  const MENTION = /@(?<mention>\S+)/;
+  const QUOTED_DIFF = /:\n```diff\n(?<diff>[\s\S]*)\n```\n/;
+  const USE_HISTORY = 'Use the git history of these lines (commit messages, `git log -L`, blame) and the surrounding code.';
+  const WHY_NOT_WHAT = 'Focus on why it changed, not a line-by-line restatement of what changed.';
+
+  /**
+   * The messages "Explain This Change" sends, word for word as TetherMessages.explainChange writes them (its
+   * EXPLAIN_WORDING), with the title each shows as.
+   */
+  const EXPLAIN_FORMS = [
+    { title: 'Explain this change',
+      re: wholeText('Explain why this change at ', MENTION, ' was made', /(?: \((?<revisions>.+)\))?/, QUOTED_DIFF, USE_HISTORY, ' ', WHY_NOT_WHAT) },
+    { title: 'Explain this uncommitted change',
+      re: wholeText('Explain this uncommitted change at ', MENTION, QUOTED_DIFF, USE_HISTORY, ' ', WHY_NOT_WHAT) },
+    { title: 'Explain this line',
+      re: wholeText('Explain why ', MENTION, ' is the way it is. Find the commit that last changed it ', /\(`git blame [^`\n]*`\)/,
+        ", read that commit's message and diff, and explain why the change was made. ", WHY_NOT_WHAT) },
+  ];
+
+  /**
+   * What the IDE's "Explain This Change" action asked, read back from the message it sent: { title, mention, revisions,
+   * diff }, or null for any other text, which then shows as written. Only an exact match counts, so a message the user
+   * typed or edited is never shown as something it isn't (nor is one whose path has a space, which the mention can't
+   * hold). The request is read from the text because that is all a resumed chat's history keeps of it.
+   */
+  function explainRequest(text) {
+    const str = String(text || '');
+    for (const form of EXPLAIN_FORMS) {
+      const m = form.re.exec(str);
+      if (m) return { title: form.title, revisions: null, diff: null, ...m.groups };
+    }
+    return null;
+  }
+
+  /**
+   * [request] (see [explainRequest]) as a row like a tool call's: what was asked and the file and lines as a link,
+   * with the quoted hunk behind a disclosure toggle, collapsed until the user opens it. The instructions to Claude
+   * stay out of it; they are the same every time. [id] is the message's, so the row stays open across re-renders.
+   */
+  function renderExplainRequest(el, request, id) {
+    el.classList.add('request');
+    const desc = h('span', { class: 'tool-desc' }, fileMention(request.mention));
+    if (request.revisions) desc.append(h('span', { class: 'request-revisions', title: request.revisions }, request.revisions));
+    const name = h('span', { class: 'tool-name' }, request.title);
+    if (!request.diff) { el.append(h('div', { class: 'tool-row' }, name, desc)); return; }
+    const row = h('div', { class: 'tool-row expandable', 'data-id': id }, name, desc, h('span', { class: 'tool-side' }, rowToggle('the change')));
+    el.append(row, h('div', { class: 'tool-detail', hidden: true }, diffBlock(request.diff)));
+    setRowExpanded(row, expandedTools.has(id));
+  }
+
+  /**
+   * An @-mention ("path#L3-4") as its file name and lines, with the full path as its tooltip; it becomes a link to
+   * the lines once the IDE resolves the path.
+   */
+  function fileMention(mention) {
+    const at = mention.lastIndexOf('#L');
+    const path = at < 0 ? mention : mention.slice(0, at);
+    const label = path.split('/').pop() + linesLabel(at < 0 ? '' : mention.slice(at + 2));
+    const el = h('span', { class: 'mention', title: mention }, label);
+    const reqId = expectReply((paths) => {
+      const r = paths && paths[mention];
+      if (!r || !el.isConnected) return;
+      el.replaceWith(resolvedFileLink(r, { class: 'file mention', title: mention }, label));
+    });
+    send({ type: 'resolvePaths', reqId, candidates: [mention] });
+    return el;
+  }
+
+  /** A mention's line part ("3" or "3-4") as " line 3" or " lines 3–4"; empty for none. */
+  function linesLabel(lines) {
+    if (!lines) return '';
+    if (!lines.includes('-')) return ' line ' + lines;
+    return ' lines ' + lines.replace('-', '\u2013');
+  }
+
+  const DIFF_LINE_CLASS = { '+': 'add', '-': 'del' };
+
+  /** Unified-diff [text] with its added and removed lines marked, scrolling sideways rather than wrapping code. */
+  function diffBlock(text) {
+    return h('pre', { class: 'diff' }, ...text.split('\n').map((line) => h('span', { class: DIFF_LINE_CLASS[line[0]] || null }, line || ' ')));
   }
 
   /**
@@ -429,6 +523,10 @@
     send({ type: 'resolveImages', reqId, paths: [...new Set(wanted.map((x) => imageKey(x.href)))] });
   }
 
+  /** A link that opens the file the IDE resolved a path to ([r], from a resolvePaths answer) at its line. */
+  const resolvedFileLink = (r, attrs, ...children) =>
+    h('a', { class: 'file', href: '#', 'data-target': r.target, 'data-line': r.line, ...attrs }, ...children);
+
   /**
    * Turns inline code that looks like a path, and markdown links whose target is not a web URL (those may point at
    * project files), into file links for the paths the IDE resolves.
@@ -444,14 +542,14 @@
       for (const c of codes) {
         const r = paths[c.textContent.trim()];
         if (!r || !c.isConnected) continue;
-        const a = h('a', { class: 'file', href: '#', 'data-target': r.target, 'data-line': r.line });
+        const a = resolvedFileLink(r);
         c.replaceWith(a);
         a.appendChild(c);
       }
       for (const { a: old, key } of anchors) {
         const r = paths[key];
         if (!r || !old.isConnected) continue;
-        const a = h('a', { class: 'file', href: '#', 'data-target': r.target, 'data-line': r.line });
+        const a = resolvedFileLink(r);
         while (old.firstChild) a.appendChild(old.firstChild);
         old.replaceWith(a);
       }

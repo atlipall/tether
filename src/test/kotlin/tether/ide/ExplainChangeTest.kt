@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import tether.ui.WebAssets
 
 class ExplainChangeTest {
     private val modified = ChangedLines(2, 4, 2, 5)
@@ -75,5 +76,11 @@ class ExplainChangeTest {
         )
         assertTrue(text.contains("+line 200\n+… 300 more lines"))
         assertTrue(!text.contains("line 201"))
+    }
+
+    /** The webview shows these messages as a collapsed row by matching their wording; see [TetherMessages.explainChange]. */
+    @Test fun theChatPageKnowsTheWordingItCollapses() {
+        val page = WebAssets.page()
+        for (fragment in TetherMessages.EXPLAIN_WORDING) assertTrue(fragment, page.contains(fragment))
     }
 }

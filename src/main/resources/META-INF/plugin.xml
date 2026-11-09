@@ -40,6 +40,11 @@
             <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift alt K"/>
             <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta shift alt K"/>
         </action>
+        <action id="tether.ExplainChange" class="tether.ide.ExplainChangeAction"
+                text="Explain This Change" description="Ask the Tether chat why the change at the caret was made">
+            <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="tether.AddToChat"/>
+            <add-to-group group-id="Diff.EditorPopupMenu" anchor="last"/>
+        </action>
         <action id="tether.RenameChat" class="tether.ui.RenameChatAction"
                 text="Rename Chat…" description="Give this Tether chat a name (saved with its session)">
             <add-to-group group-id="ToolWindowContextMenu" anchor="last"/>

@@ -31,6 +31,7 @@ dependencies {
         bundledPlugin("com.intellij.modules.jcef")
         bundledPlugin("JavaScript")
         bundledPlugin("intellij.testRunner.plugin")
+        bundledModule("intellij.platform.vcs.impl")
         testFramework(TestFrameworkType.Platform)
     }
     testImplementation("junit:junit:4.13.2")

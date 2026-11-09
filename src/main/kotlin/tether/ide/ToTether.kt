@@ -81,6 +81,50 @@ object TetherMessages {
         return "Console output:\n```\n${fenceSafe(shown)}\n```"
     }
 
+    /**
+     * Asks Claude why [change] was made: a hunk is quoted as a diff, with the diff's side titles when it came from one,
+     * and a committed line is left for Claude to trace with git blame.
+     */
+    fun explainChange(change: ChangeToExplain): String = when (change) {
+        is ChangeToExplain.CommittedLine -> {
+            val where = Mention.format(change.path, change.line, null)
+            "Explain why $where is the way it is. Find the commit that last changed it " +
+                "(`git blame -L ${change.line},${change.line} -- ${change.path}`), read that commit's message and diff, " +
+                "and explain why the change was made. $WHY_NOT_WHAT"
+        }
+        is ChangeToExplain.Hunk -> buildString {
+            val where = Mention.format(change.path, change.firstLine, change.lastLine)
+            when (val origin = change.origin) {
+                is ChangeToExplain.Origin.Diff -> {
+                    append("Explain why this change at ").append(where).append(" was made")
+                    titlesOf(origin)?.let { append(" (").append(it).append(')') }
+                    append(':')
+                }
+                ChangeToExplain.Origin.Uncommitted -> append("Explain this uncommitted change at ").append(where).append(':')
+            }
+            append("\n```diff\n").append(fenceSafe(diffOf(change))).append("\n```\n")
+            append("Use the git history of these lines (commit messages, `git log -L`, blame) and the surrounding code. ")
+            append(WHY_NOT_WHAT)
+        }
+    }
+
+    private const val WHY_NOT_WHAT = "Focus on why it changed, not a line-by-line restatement of what changed."
+    private const val MAX_HUNK_LINES = 200
+
+    /** The diff's side titles as "before → after", or null when it has none. */
+    private fun titlesOf(diff: ChangeToExplain.Origin.Diff): String? {
+        val before = diff.beforeTitle?.takeIf { it.isNotBlank() }
+        val after = diff.afterTitle?.takeIf { it.isNotBlank() }
+        return if (before == null && after == null) null else "${before ?: "before"} → ${after ?: "after"}"
+    }
+
+    /** [hunk] as unified-diff lines, cut to [MAX_HUNK_LINES] per side. */
+    private fun diffOf(hunk: ChangeToExplain.Hunk): String {
+        fun side(lines: List<String>, mark: Char) =
+            lines.take(MAX_HUNK_LINES).map { "$mark$it" } + if (lines.size > MAX_HUNK_LINES) listOf("$mark… ${lines.size - MAX_HUNK_LINES} more lines") else emptyList()
+        return (side(hunk.before, '-') + side(hunk.after, '+')).joinToString("\n")
+    }
+
     /** Output that itself contains ``` would end the block early. */
     private fun fenceSafe(text: String) = text.replace("```", "`​``")
 }

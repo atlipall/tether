@@ -1556,7 +1556,7 @@
   }
 
   input.addEventListener('keydown', (e) => {
-    if (e.isComposing || e.keyCode === 229) return;
+    if (window.TextKeys.isComposing(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); return; }
     if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.key === 'Tab' && suggestion && !input.value) { e.preventDefault(); acceptSuggestion(); return; }
@@ -1570,6 +1570,7 @@
     fitInput();
   }
   input.addEventListener('input', onTyped);
+  window.TextKeys.install(input);
   fitInput();
   sendBtn.addEventListener('click', submit);
   activityStop.addEventListener('click', () => send({ type: 'interrupt' }));

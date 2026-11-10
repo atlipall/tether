@@ -5,14 +5,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WebAssetsTest {
-    /** Only the three closing script tags we wrote may appear. */
+    /** Only the closing script tags of index.html may appear: no inlined script may contain one. */
     @Test fun pageInlinesEverything() {
         val page = WebAssets.page()
         assertFalse(page.contains("/*INLINE:"))
         assertTrue(page.contains("window.chat ="))
         assertTrue(page.contains("DOMPurify"))
         assertTrue(page.contains("marked"))
-        assertTrue(Regex("</script").findAll(page).count() == 3)
+        assertTrue(page.contains("window.TextKeys ="))
+        val template = WebAssetsTest::class.java.getResource("/webview/index.html")!!.readText()
+        assertTrue(Regex("</script").findAll(page).count() == Regex("</script").findAll(template).count())
     }
 
     @Test fun pageDeclaresContentSecurityPolicy() {

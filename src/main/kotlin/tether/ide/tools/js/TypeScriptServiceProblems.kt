@@ -24,7 +24,7 @@ import java.util.concurrent.CompletableFuture
 class TypeScriptServiceProblems : ProblemSource {
     override val name = "the TypeScript service"
 
-    override fun start(project: Project, file: VirtualFile): CompletableFuture<List<Problem>>? =
+    override fun start(project: Project, file: VirtualFile): CompletableFuture<List<Problem>> =
         highlight(project, file) { errors -> errors.mapNotNull { problemOf(it) } }
 
     /**
@@ -32,7 +32,7 @@ class TypeScriptServiceProblems : ProblemSource {
      * called here and that must not hold up the user's typing meanwhile.
      */
     override fun fixes(project: Project, file: VirtualFile, line: Int, deadline: Deadline): List<FixCandidate> {
-        val pending = highlight(project, file) { it } ?: return emptyList()
+        val pending = highlight(project, file) { it }
         val errors = deadline.await(pending, name).filter { it.line == line - 1 }
         if (errors.isEmpty()) return emptyList()
         return deadline.read("Asking $name for fixes") {
@@ -48,18 +48,18 @@ class TypeScriptServiceProblems : ProblemSource {
     }
 
     /**
-     * Starts asking the service for [file]'s errors (this file's only), passed through [transform]; null when the service
-     * doesn't handle it. Returns at once. The service answers in a non-blocking read action, which steps aside for any
-     * write action and then asks again: it holds the read lock while tsserver works, and a write waiting on that lock
-     * would stop the EDT from getting one too, freezing the IDE until tsserver answered.
+     * Starts asking the service for [file]'s errors (this file's only), passed through [transform]. Returns at once;
+     * the future gives no errors when the service doesn't handle [file]. Everything, including picking the service,
+     * happens in a non-blocking read action. Picking the service can build the project's JS config graph through
+     * `runBlockingCancellable`, which throws on a thread without a progress indicator, and the read supplies one. The
+     * read steps aside for any write action and then asks again: it holds the read lock while tsserver works, and a
+     * write waiting on that lock would stop the EDT from getting one too, freezing the IDE until tsserver answered.
      *
-     * Whether the service handles [file] is checked up front in a short read, so callers get null at once rather than a
-     * future. [transform] runs inside the request, so the future returned is the request's own: cancelling it cancels
-     * the request, which a later `thenApply` stage would not. When the project closes first, the future fails with
+     * [transform] runs inside the request, so the future returned is the request's own: cancelling it cancels the
+     * request, which a later `thenApply` stage would not. When the project closes first, the future fails with
      * [ToolUnavailable].
      */
-    private fun <T> highlight(project: Project, file: VirtualFile, transform: (List<JSAnnotationError>) -> T): CompletableFuture<T>? {
-        if (!ReadAction.compute<Boolean, RuntimeException> { highlightable(project, file) != null }) return null
+    private fun <T> highlight(project: Project, file: VirtualFile, transform: (List<JSAnnotationError>) -> T): CompletableFuture<T> {
         val result = CompletableFuture<T>()
         val request = ReadAction.nonBlocking(Callable { transform(serviceErrors(project, file)) })
             .expireWith(project)

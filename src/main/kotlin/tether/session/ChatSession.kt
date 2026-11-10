@@ -250,6 +250,13 @@ class ChatSession(
     private var backgroundTasks: List<BackgroundTask> = emptyList()
     /** The background processes last told to the listener. */
     private var processes: List<BackgroundProcess> = emptyList()
+    /** The Agent call whose card shows each subagent, by the CLI's task id, so a resumed run finds the card again. */
+    private val agentCards = HashMap<String, String>()
+    /**
+     * The Agent call to show in place of each call that resumed a finished subagent (e.g. SendMessage), by that call's id:
+     * the resumed run's task events and items name the resuming call, but belong on the agent's first card.
+     */
+    private val resumedAgents = HashMap<String, String>()
     /** Calls whose task is not a subagent (a backgrounded Bash call), so their task events don't make them agent cards. */
     private val otherTasks = HashSet<String>()
     /** Serves [IdeHost.tools] to the current process; null when it was started without them. */
@@ -648,13 +655,11 @@ class ChatSession(
             is CliEvent.ToolUse -> onToolUse(event)
             is CliEvent.TaskStarted ->
                 if (event.taskType != null && event.taskType != AGENT_TASK) otherTasks += event.toolUseId
-                else updateAgent(event.toolUseId) {
-                    it.copy(subagentType = event.subagentType, background = event.background, prompt = capped(event.prompt), taskId = event.taskId)
-                }
-            is CliEvent.TaskProgress -> updateAgent(event.toolUseId) {
+                else onAgentStarted(event)
+            is CliEvent.TaskProgress -> updateAgent(cardOf(event.toolUseId)) {
                 it.copy(toolUses = event.toolUses ?: it.toolUses, durationMs = event.durationMs ?: it.durationMs, lastTool = event.lastTool)
             }
-            is CliEvent.TaskDone -> if (otherTasks.remove(event.toolUseId)) Unit else updateAgent(event.toolUseId) {
+            is CliEvent.TaskDone -> if (otherTasks.remove(event.toolUseId)) Unit else updateAgent(cardOf(event.toolUseId)) {
                 it.copy(
                     state = if (event.status == "completed") AgentState.DONE else AgentState.FAILED,
                     toolUses = event.toolUses ?: it.toolUses, durationMs = event.durationMs ?: it.durationMs,
@@ -673,6 +678,31 @@ class ChatSession(
         }
     }
 
+    /**
+     * Shows a subagent's start on its card. A task the CLI already ran under another call is a finished subagent resumed
+     * (by SendMessage): its first card goes back to running, and the resuming call's events and items are shown there.
+     */
+    private fun onAgentStarted(event: CliEvent.TaskStarted) {
+        val card = event.taskId?.let(agentCards::get)?.takeIf { it != event.toolUseId }
+        if (card == null) {
+            event.taskId?.let { agentCards[it] = event.toolUseId }
+            updateAgent(event.toolUseId) {
+                it.copy(subagentType = event.subagentType, background = event.background, prompt = capped(event.prompt), taskId = event.taskId)
+            }
+            return
+        }
+        resumedAgents[event.toolUseId] = card
+        updateAgent(card) {
+            it.copy(
+                background = event.background, state = AgentState.RUNNING, taskId = event.taskId,
+                toolUses = null, durationMs = null, lastTool = null, report = null,
+            )
+        }
+    }
+
+    /** The card that shows the subagent of call [toolUseId]: its first Agent call's when the call resumed it. */
+    private fun cardOf(toolUseId: String): String = resumedAgents[toolUseId] ?: toolUseId
+
     /** A message starting while idle is a turn the CLI began by itself, e.g. to read a finished background agent's report. */
     private fun onMessageStart() {
         if (state == SessionState.IDLE) {
@@ -684,7 +714,7 @@ class ChatSession(
     /** A subagent's messages arrive whole; the main conversation's are streamed, so one is shown here only when no deltas came for it. */
     private fun onAssistantText(event: CliEvent.AssistantText) {
         when {
-            event.parentId != null -> emit(ChatItem.AssistantText(nextId("text"), event.text, false, event.parentId))
+            event.parentId != null -> emit(ChatItem.AssistantText(nextId("text"), event.text, false, cardOf(event.parentId)))
             event.messageId !in streamedMessages -> emit(ChatItem.AssistantText(nextId("text"), event.text, false))
         }
     }
@@ -696,7 +726,7 @@ class ChatSession(
             ?: ChatItem.ToolCall(event.toolUseId, event.name, event.input, null, ToolStatus.RUNNING, null, null, false)
         upsertTool(base.copy(
             name = event.name, input = event.input, filePath = filePathOf(event.input),
-            parentId = event.parentId ?: base.parentId, agent = agents[event.toolUseId],
+            parentId = event.parentId?.let(::cardOf) ?: base.parentId, agent = agents[event.toolUseId],
         ))
         if (event.parentId == null) {
             runningTools[event.toolUseId] = event.name

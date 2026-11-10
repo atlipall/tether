@@ -176,6 +176,7 @@
           items.clear(); childBoxes.clear(); waitingFor.clear(); waitingOn.clear(); parentOf.clear(); reports.clear();
           sentText = takenBack = null;
           stubs.clear(); dismissed.clear(); stopping.clear();
+          turnOf.clear(); revealed.clear(); turn = 0; agentsCollapsed = false;
           logContent.textContent = '';
           tasksEl.querySelectorAll(':scope > .agent').forEach((el) => el.remove());
           setProcesses([]);
@@ -312,8 +313,10 @@
     const parentId = typeof item.parentId === 'string' && item.parentId ? item.parentId : null;
     if (parentId) parentOf.set(item.id, parentId); else parentOf.delete(item.id);
     const pinned = !parentId && isAgentCall(item);
-    if (item.kind === 'user' && !el.isConnected) dismissFinished();
+    if (item.kind === 'user' && !el.isConnected) startTurn();
     if (pinned) placeStub(item);
+    const startsAgent = pinned && !turnOf.has(item.id);
+    if (startsAgent) turnOf.set(item.id, turn);
     place(el, parentId, pinned);
     const wasWaiting = el.classList.contains('status-awaiting_permission');
     const open = [...ownDetails(el)].map((d) => d.open);
@@ -326,14 +329,20 @@
       case 'notice': el.className = 'msg notice' + (item.isError ? ' error' : ''); el.append(withLinks(item.text)); break;
     }
     ownDetails(el).forEach((d, i) => { if (open[i] !== undefined) d.open = open[i]; });
-    if (pinned) { el.hidden = dismissed.has(item.id) && agentState(item) !== 'running'; showTasks(); }
+    if (startsAgent) unfoldAgents();
+    else if (pinned) showTasks();
     const startedWaiting = item.kind === 'tool' && item.status === 'awaiting_permission' && !wasWaiting;
     if (startedWaiting) expandAgentsFrom(parentId);
   }
 
-  /** Opens the card [id] and every card around it, so a subagent that starts waiting for an answer comes into view. */
+  /**
+   * Opens the card [id] and every card around it, and the agent box if they sit there, so a subagent that starts waiting
+   * for an answer comes into view.
+   */
   function expandAgentsFrom(id) {
-    for (let p = id; p; p = parentOf.get(p)) expandAgent(p);
+    let top = null;
+    for (let p = id; p; p = parentOf.get(p)) { expandAgent(p); top = p; }
+    if (top && turnOf.has(top)) unfoldAgents(top);
   }
 
   /** Registers [onReply] for the IDE's answer to a request and returns the id to send the request with. */
@@ -786,10 +795,13 @@
     if (t.resultPreview) el.append(h('details', {}, h('summary', {}, 'Result'), h('pre', {}, withLinks(clip(t.resultPreview)))));
   }
 
+  /** The states an agent card can be in, in the order the agent box counts them. */
+  const AGENT_STATES = ['running', 'done', 'failed'];
+
   /** running | done | failed: from the task events, else (an older CLI) from the call's own status. */
   function agentState(t) {
     const s = t.agent && t.agent.state;
-    if (s === 'running' || s === 'done' || s === 'failed') return s;
+    if (AGENT_STATES.includes(s)) return s;
     if (t.status === 'done') return 'done';
     return t.status === 'running' || t.status === 'awaiting_permission' ? 'running' : 'failed';
   }
@@ -873,10 +885,39 @@
    * It hides while its card shows above the message box, so the agent isn't listed twice (see [showStubs]).
    */
   const stubs = new Map();
-  /** Pinned cards the user dismissed (or that finished before a later message), by id; a running card always shows. */
+  /** Pinned cards the user dismissed, by id; a running card always shows. */
   const dismissed = new Set();
   /** Task ids the user asked to stop, so their Stop stays disabled until the task goes. */
   const stopping = new Set();
+  /** The number of user messages so far. */
+  let turn = 0;
+  /** The [turn] each pinned card started in, by card id; its keys are the agent box's cards, every agent of the session. */
+  const turnOf = new Map();
+  /** Whether the agent box shows only its header; a new message folds it when no agent is running. */
+  let agentsCollapsed = false;
+  /** Finished cards of earlier messages that the user brought back, from the log or with "Show earlier", by id. */
+  const revealed = new Set();
+  /** The finished agents of earlier messages that the long list currently leaves out, by id. */
+  let leftOut = new Set();
+  /** A box with more agents than this leaves out the finished ones of earlier messages until asked. */
+  const AGENTS_SHOWN = 5;
+
+  /** The agent box header's summary of how many agents ran and how they stand. */
+  const agentsSummary = h('span', { class: 'tool-desc' });
+  /** The agent box's header: a disclosure triangle labelled with [agentsSummary]. */
+  const agentsHead = h('button', { class: 'tool-row agents-head', 'data-action': 'toggleAgents', hidden: true },
+    h('span', { class: 'tool-toggle', 'aria-hidden': 'true' }), h('span', { class: 'tool-name' }, 'Agents'), agentsSummary);
+  /** The row that brings back the finished agents of earlier messages that a long list leaves out. */
+  const earlierAgents = h('button', { class: 'link agents-earlier', 'data-action': 'showEarlierAgents', hidden: true });
+  tasksEl.append(agentsHead, earlierAgents);
+
+  /** A new message folds the agent box unless an agent is still running; one the message starts opens it again. */
+  function startTurn() {
+    turn++;
+    revealed.clear();
+    if (!tasksEl.querySelector(':scope > .agent-running')) agentsCollapsed = true;
+    showTasks();
+  }
 
   /** Puts or updates [t]'s line in the log, where the card would have been. */
   function placeStub(t) {
@@ -902,9 +943,8 @@
     const el = items.get(id);
     if (!el || el.parentNode !== tasksEl) return;
     dismissed.delete(id);
-    el.hidden = false;
     expandAgent(id);
-    showTasks();
+    unfoldAgents(id);
     el.scrollIntoView({ block: 'nearest' });
     const toggle = el.querySelector(':scope > .agent-head .tool-toggle');
     if (toggle) toggle.focus();
@@ -915,28 +955,61 @@
     const el = items.get(id);
     if (!el || el.classList.contains('agent-running')) return;
     dismissed.add(id);
-    el.hidden = true;
-    showTasks();
-  }
-
-  /** A new message clears away the agents that finished before it. */
-  function dismissFinished() {
-    for (const el of tasksEl.querySelectorAll(':scope > .agent:not(.agent-running):not([hidden])')) {
-      const head = el.querySelector(':scope > .agent-head');
-      if (head) dismissed.add(head.dataset.id);
-      el.hidden = true;
-    }
     showTasks();
   }
 
   /** True while a reset replays the chat: the task rows are shown once at its end rather than after every item. */
   let replaying = false;
 
-  /** The task rows show while any row is visible, and each pinned card's log line only while the card does not. */
+  /**
+   * Decides which pinned cards show: none while the box is folded, nor those the user dismissed, and in a long list not
+   * the finished ones of earlier messages. Then the task rows show while any row is visible (the agent box's header stays
+   * once an agent has run), and each pinned card's log line only while the card does not.
+   */
   function showTasks() {
     if (replaying) return;
+    const cards = [...turnOf.keys()].map((id) => ({ id, el: items.get(id) })).filter((c) => c.el && c.el.parentNode === tasksEl);
+    const counts = Object.fromEntries(AGENT_STATES.map((state) => [state, 0]));
+    const kept = [];
+    const earlier = new Set();
+    for (const c of cards) {
+      c.state = AGENT_STATES.find((state) => c.el.classList.contains('agent-' + state)) || 'failed';
+      counts[c.state]++;
+      if (c.state !== 'running' && dismissed.has(c.id)) continue;
+      kept.push(c);
+      if (c.state !== 'running' && turnOf.get(c.id) < turn && !revealed.has(c.id)) earlier.add(c.id);
+    }
+    leftOut = kept.length > AGENTS_SHOWN ? earlier : new Set();
+    const shown = new Set(kept.filter((c) => !leftOut.has(c.id)).map((c) => c.id));
+    for (const c of cards) c.el.hidden = agentsCollapsed || !shown.has(c.id);
+    agentsHead.hidden = !cards.length;
+    setRowExpanded(agentsHead, !agentsCollapsed);
+    agentsHead.setAttribute('aria-expanded', agentsCollapsed ? 'false' : 'true');
+    agentsHead.title = agentsCollapsed ? 'Show agents' : 'Hide agents';
+    agentsSummary.textContent = AGENT_STATES.filter((state) => counts[state]).map((state) => counts[state] + ' ' + state).join(' \u00b7 ');
+    earlierAgents.hidden = agentsCollapsed || !leftOut.size;
+    earlierAgents.textContent = 'Show ' + leftOut.size + ' earlier ' + (leftOut.size === 1 ? 'agent' : 'agents');
     tasksEl.hidden = ![...tasksEl.children].some((c) => !c.hidden);
     showStubs();
+  }
+
+  /** Unfolds the agent box, bringing back pinned card [id] if it is a finished one of an earlier message. */
+  function unfoldAgents(id) {
+    if (id) revealed.add(id);
+    agentsCollapsed = false;
+    showTasks();
+  }
+
+  /** Brings back every finished agent of earlier messages that the long list left out. */
+  function showEarlierAgents() {
+    leftOut.forEach((id) => revealed.add(id));
+    showTasks();
+  }
+
+  /** Folds or unfolds the agent box. */
+  function toggleAgents() {
+    agentsCollapsed = !agentsCollapsed;
+    showTasks();
   }
 
   /** Shows the log line of each pinned card that is not in view above the message box, and hides the rest. */
@@ -1900,6 +1973,8 @@
       send({ type: 'stopTask', id: b.dataset.task });
     }
     else if (action === 'dismissTask') dismissAgent(b.dataset.id);
+    else if (action === 'toggleAgents') toggleAgents();
+    else if (action === 'showEarlierAgents') showEarlierAgents();
     else if (action === 'deny') {
       const reason = b.parentElement.querySelector('.deny-reason').value.trim();
       send({ type: 'permission', requestId: b.dataset.req, decision: 'deny', message: reason || 'The user denied this action.' });

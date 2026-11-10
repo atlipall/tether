@@ -192,6 +192,10 @@ img.md-img { display: block; max-width: 100%; max-height: 400px; margin: 4px 0; 
 #tasks > .msg { margin: 0; }
 #tasks > .agent { border-left: 0; padding-left: 0; }
 #tasks > .agent-done, #tasks > .agent-failed { order: 1; }
+#tasks > .agents-earlier { order: 2; align-self: flex-start; margin: 2px 8px 2px 26px; }
+#tasks > .agents-head { width: 100%; min-height: 0; border: 0; border-radius: 0; background: none; color: inherit; text-align: left; }
+#tasks > .agents-head[hidden], #tasks > .agents-earlier[hidden] { display: none; }
+#tasks > .agents-head .tool-desc { color: var(--muted); }
 #tasks .tool-row { padding: 2px 8px 2px 6px; }
 #tasks .tool-row:hover, .request .tool-row:hover { background: var(--bg); }
 #tasks .tool-side { font-variant-numeric: tabular-nums; white-space: nowrap; }

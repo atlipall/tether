@@ -14,6 +14,8 @@ window.runTasksTests = function () {
     id, kind: 'tool', name: 'Agent', input: { description: 'Review ' + id }, status: state === 'running' ? 'running' : 'done',
     agent: Object.assign({ subagentType: 'apiary-expert', background: true, state, toolUses: 3, durationMs: 4000, taskId: 'task-' + id }, extra || {}),
   });
+  const head = () => tasks().querySelector('.agents-head');
+  const earlier = () => tasks().querySelector('.agents-earlier');
   const card = (id) => [...tasks().querySelectorAll(':scope > .agent')].find((el) => el.querySelector('.agent-head').dataset.id === id);
   window.__sent.length = 0;
   receive({ type: 'reset', items: [] });
@@ -63,10 +65,19 @@ window.runTasksTests = function () {
   receive({ type: 'item', item: agentCall('a2', 'done') });
   receive({ type: 'item', item: { id: 'u2', kind: 'user', text: 'thanks' } });
 
-  test('a new message clears away finished agents', () => {
-    assert(card('a1').hidden && card('a2').hidden, 'Finished agents must go on the next message');
-    assert(tasks().hidden, 'With nothing left the rows must hide');
-    assert([...log().querySelectorAll('.agent-stub')].every((stub) => !stub.hidden), 'Cleared agents must keep their lines in the log');
+  test('a new message folds the agent box when no agent runs, and keeps it', () => {
+    assert(!tasks().hidden && !head().hidden, 'The box must stay for the rest of the session');
+    assert(head().getAttribute('aria-expanded') === 'false', 'The box must fold');
+    assert(head().querySelector('.tool-desc').textContent === '2 done', 'The header must count the agents');
+    assert(card('a1').hidden && card('a2').hidden, 'A folded box shows no agents');
+    assert([...log().querySelectorAll('.agent-stub')].every((stub) => !stub.hidden), 'Folded agents must keep their lines in the log');
+  });
+
+  test('the header unfolds and folds the box', () => {
+    head().click();
+    assert(head().getAttribute('aria-expanded') === 'true' && !card('a1').hidden && !card('a2').hidden, 'Unfolding must show the agents');
+    head().click();
+    assert(card('a1').hidden && card('a2').hidden, 'Folding must hide them again');
   });
 
   receive({ type: 'activity', phase: null });
@@ -92,7 +103,45 @@ window.runTasksTests = function () {
 
   test('a process that ends leaves the rows', () => {
     assert(!tasks().querySelector('.process'), 'The ended process must go');
-    assert(tasks().hidden, 'With nothing left the rows must hide');
+    assert(!head().hidden && card('a1').hidden, 'Only the folded agent box must stay');
+  });
+
+  receive({ type: 'items', items: [{ id: 'u3', kind: 'user', text: 'check again' }, agentCall('a3', 'running')] });
+
+  test('a message that starts an agent opens the box with the earlier agents', () => {
+    assert(head().getAttribute('aria-expanded') === 'true', 'A new agent must open the box');
+    assert(!card('a1').hidden && !card('a2').hidden && !card('a3').hidden, 'A short list shows every agent');
+    assert(head().querySelector('.tool-desc').textContent === '1 running \u00b7 2 done', 'The header must count by state');
+  });
+
+  receive({ type: 'item', item: { id: 'u4', kind: 'user', text: 'meanwhile' } });
+
+  test('a running agent keeps the box open on a new message', () => {
+    assert(head().getAttribute('aria-expanded') === 'true' && !card('a3').hidden, 'The running agent must stay in view');
+  });
+
+  receive({ type: 'items', items: ['a4', 'a5', 'a6'].map((id) => agentCall(id, 'running')) });
+
+  test('a long list leaves out finished agents of earlier messages', () => {
+    assert(card('a1').hidden && card('a2').hidden, 'Earlier finished agents must be left out');
+    assert(!card('a3').hidden && !card('a6').hidden, 'Running agents must show');
+    assert(!earlier().hidden && earlier().textContent === 'Show 2 earlier agents', 'The box must offer the left-out agents');
+    earlier().click();
+    assert(!card('a1').hidden && !card('a2').hidden && earlier().hidden, 'Asking must bring them back');
+  });
+
+  receive({ type: 'item', item: { id: 'u5', kind: 'user', text: 'and now' } });
+
+  test('the log line brings back a left-out agent', () => {
+    assert(card('a1').hidden, 'A new message leaves earlier agents out again');
+    log().querySelector('.agent-stub .tool-row[data-id="a1"]').click();
+    assert(!card('a1').hidden && card('a2').hidden, 'Only the asked-for agent must come back');
+  });
+
+  receive({ type: 'reset', items: [] });
+
+  test('a reset clears the agent box', () => {
+    assert(tasks().hidden && head().hidden, 'An empty chat has no agent box');
   });
 
   return results;

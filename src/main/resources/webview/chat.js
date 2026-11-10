@@ -43,6 +43,8 @@
   let reqSeq = 0;
   /** Sent messages, oldest first: shared by every tab and kept by the IDE. */
   let history = [];
+  /** The slash commands the agent offers, as `{ name, description, hint }`; empty until it reports them. */
+  let commands = [];
   /** Index into [history] while recalling, -1 otherwise. */
   let recall = -1;
   /** What the box held before recall started. */
@@ -173,9 +175,12 @@
         case 'activity': setActivity(msg); break;
         case 'resolved': answer(msg.reqId, msg.paths); break;
         case 'images': answer(msg.reqId, msg.images || {}); break;
+        case 'files': answer(msg.reqId, Array.isArray(msg.items) ? msg.items : []); break;
         case 'insert': insertText(msg.text); break;
+        case 'unsentText': restoreUnsentText(msg.text); break;
         case 'theme': applyTheme(msg); break;
         case 'history': history = Array.isArray(msg.entries) ? msg.entries : []; break;
+        case 'commands': setCommands(Array.isArray(msg.items) ? msg.items : []); break;
         case 'checkout': setCheckout(msg.text); break;
         case 'usage': setUsage(msg); break;
         case 'model': setModel(msg); break;
@@ -1155,9 +1160,9 @@
     agentPicker.button.disabled = !!msg.locked || agents.length < 2;
     setChoices(agentPicker, agents, agent);
     agentPicker.button.title = msg.locked ? 'This chat runs ' + agentName + '. Start a new chat for another agent.' : 'Agent for this chat';
-    if (changed) { mode = ''; setModes([]); clearModel(); }
-    placeholder = 'Message ' + agentName + ' (Enter to send, Shift+Enter for a new line)';
-    activityStop.title = 'Stop ' + agentName;
+    if (changed) { mode = ''; setModes([]); clearModel(); setCommands([]); }
+    placeholder = 'Message ' + agentName;
+    activityStop.title = 'Stop ' + agentName + ' (Esc)';
     setSuggestion(changed ? '' : suggestion);
   }
 
@@ -1230,11 +1235,35 @@
   let resizeFrame = 0;
   window.addEventListener('resize', () => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(fitInput); });
 
-  /** Every programmatic change of the box's text goes through here, so its height follows. */
+  /** How long the box must be still before its text is reported, in milliseconds. */
+  const UNSENT_DELAY_MS = 400;
+  let unsentTimer = 0;
+
+  /** Every programmatic change of the box's text goes through here, so its height follows and the host hears of it. */
   function setInput(text, caret = text.length) {
     input.value = text;
     input.setSelectionRange(caret, caret);
     fitInput();
+    saveUnsentTextSoon();
+  }
+
+  /** Reports the box's text to the host, which gives it back after a reload or restart. */
+  function saveUnsentText() {
+    clearTimeout(unsentTimer);
+    send({ type: 'unsentText', text: input.value });
+  }
+
+  /** Reports the box's text once typing pauses, so a burst of keys sends one message. */
+  function saveUnsentTextSoon() {
+    clearTimeout(unsentTimer);
+    unsentTimer = setTimeout(saveUnsentText, UNSENT_DELAY_MS);
+  }
+
+  /** Puts text the host kept back in the box, unless the user has already started typing in this page. */
+  function restoreUnsentText(text) {
+    if (typeof text !== 'string' || input.value) return;
+    setSuggestion('');
+    setInput(text);
   }
 
   let placeholder = input.placeholder;
@@ -1504,6 +1533,17 @@
     fitInput();
   }
 
+  /**
+   * Empties the box after a send as an edit, not by setting its value, so Undo straight afterwards brings the text
+   * back to fix and send again. The images went with the message and don't come back.
+   */
+  function clearSentText() {
+    input.focus();
+    input.select();
+    document.execCommand('delete');
+    if (input.value) setInput('');
+  }
+
   /** Sends the box's text with the attachments in the tray, once every image is ready. */
   function submit() {
     const text = input.value.trim();
@@ -1514,7 +1554,7 @@
     if (!text && !attachments.length) return;
     send({ type: 'send', text, attachments });
     attachments.forEach(removeTile);
-    setInput('');
+    clearSentText();
     recall = -1;
     draft = '';
     setSuggestion('');
@@ -1559,18 +1599,81 @@
     if (window.TextKeys.isComposing(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); return; }
     if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'Escape' && stoppable() && !input.value) { e.preventDefault(); send({ type: 'interrupt' }); return; }
     if (e.key === 'Tab' && suggestion && !input.value) { e.preventDefault(); acceptSuggestion(); return; }
     if (e.key === 'ArrowUp' && caretOnFirstLine() && recallKey('up')) e.preventDefault();
     else if (e.key === 'ArrowDown' && caretOnLastLine() && recallKey('down')) e.preventDefault();
   });
-  /** Typing ends recall (the edited text becomes the new draft) and dismisses the suggestion. */
+  /** Takes the agent's commands, and mentions `/` in the box's hint only while there are some to offer. */
+  function setCommands(items) {
+    commands = items;
+    document.getElementById('hint-commands').hidden = !commands.length;
+  }
+
+  /** Whether Escape in an empty box stops the turn: it is working, not waiting for the user's answer. */
+  const stoppable = () => activityPhase !== null && activityPhase !== 'waiting';
+
+  /** Completes `/name` at the very start of the box from the agent's commands; accepting leaves room for arguments. */
+  const commandCompletion = {
+    label: 'Commands',
+    empty: 'No matching commands',
+    match: (before) => {
+      const typed = /^\/(\S*)$/.exec(before);
+      return typed && commands.length ? { start: 0, query: typed[1] } : null;
+    },
+    items: (query, show) => show(window.Completion.rank(commands, query, (c) => c.name)),
+    row: (c) => ({ label: '/' + c.name + (c.hint ? ' ' + c.hint : ''), detail: c.description }),
+    text: (c) => '/' + c.name + ' ',
+  };
+
+  /** How long typing must pause before the IDE is asked for files, in milliseconds. */
+  const FILE_QUERY_DELAY_MS = 100;
+  let fileQueryTimer = 0;
+  /** The file search the list waits on; an older one the IDE dropped for a newer query never answers. */
+  let fileRequest = 0;
+
+  /** Stops waiting for the file search in flight, and for one about to be sent. */
+  function cancelFileQuery() {
+    clearTimeout(fileQueryTimer);
+    pendingResolve.delete(fileRequest);
+  }
+
+  /**
+   * Completes an `@` mention, at the start or after a space, from the project's files as the IDE finds them; an empty
+   * query offers the open files. Accepting inserts the mention the IDE builds, as its "Add to Tether" action does.
+   */
+  const fileCompletion = {
+    label: 'Files',
+    empty: 'No matching files',
+    match: (before) => {
+      const typed = /(^|\s)@([^\s@]*)$/.exec(before);
+      return typed ? { start: typed.index + typed[1].length, query: typed[2] } : null;
+    },
+    items: (query, show) => {
+      cancelFileQuery();
+      fileQueryTimer = setTimeout(() => {
+        fileRequest = expectReply(show);
+        send({ type: 'findFiles', reqId: fileRequest, query });
+      }, FILE_QUERY_DELAY_MS);
+    },
+    cancel: cancelFileQuery,
+    row: (f) => ({ label: f.name, detail: f.folder }),
+    text: (f) => f.mention + ' ',
+  };
+
+  /** Typing ends recall (the edited text becomes the new draft), dismisses the suggestion and reports the text to the host. */
   function onTyped() {
     recall = -1;
     if (suggestion) setSuggestion('');
     fitInput();
+    saveUnsentTextSoon();
   }
   input.addEventListener('input', onTyped);
+  input.addEventListener('blur', saveUnsentText);
+  window.addEventListener('pagehide', saveUnsentText);
   window.TextKeys.install(input);
+  window.Completion.install(input, document.getElementById('completion'), document.getElementById('completion-status'),
+    [commandCompletion, fileCompletion]);
   fitInput();
   sendBtn.addEventListener('click', submit);
   activityStop.addEventListener('click', () => send({ type: 'interrupt' }));

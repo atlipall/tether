@@ -58,6 +58,8 @@ img.openable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 #composer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 4px; }
 #composer-tools .composer-tool { position: relative; display: inline-flex; align-items: center; gap: 4px; max-width: min(14em, calc(100vw - 24px)); height: 24px; padding: 0 5px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
 #composer-tools [hidden] { display: none; }
+#input-hint { flex: 1 1 0; min-width: 0; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: .9em; visibility: hidden; }
+#composer:has(#input:focus:placeholder-shown) #input-hint { visibility: visible; }
 #composer-choices { display: flex; align-items: center; gap: 2px; min-width: 0; margin-left: auto; }
 #composer-tools .composer-tool:hover { background: var(--code-bg); color: var(--fg); }
 #composer-tools svg { width: 16px; height: 16px; flex: none; }
@@ -65,7 +67,17 @@ img.openable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 #mode-label { font-size: .9em; }
 .picker { position: relative; min-width: 0; }
 #composer-tools .composer-tool[aria-expanded="true"] { background: var(--code-bg); color: var(--fg); }
-.picker-menu { position: fixed; z-index: 10; min-width: min(170px, calc(100vw - 16px)); max-width: calc(100vw - 16px); overflow-y: auto; overscroll-behavior: contain; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+.picker-menu, .completion { z-index: 10; overflow-y: auto; overscroll-behavior: contain; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+.completion { position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); max-height: min(240px, 40vh); }
+.completion[hidden], #hint-commands[hidden] { display: none; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.completion-row { display: flex; align-items: baseline; gap: 8px; padding: 3px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; }
+.completion-row[aria-selected="true"] { background: var(--accent); color: #fff; }
+.completion-label { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; }
+.completion-detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.completion-row[aria-selected="true"] .completion-detail { color: inherit; opacity: .85; }
+.completion-empty { padding: 3px 8px; color: var(--muted); }
+.picker-menu { position: fixed; min-width: min(170px, calc(100vw - 16px)); max-width: calc(100vw - 16px); }
 .picker-menu [role="menuitemradio"] { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; border-radius: 4px; cursor: pointer; overflow-wrap: anywhere; }
 .picker-menu [role="menuitemradio"]::before { content: ""; width: 14px; flex: none; text-align: center; }
 .picker-menu [aria-checked="true"]::before { content: "\2713"; }

@@ -14,6 +14,8 @@ import tether.cli.Models
 import tether.cli.PermissionMode
 import tether.cli.RunningModel
 import tether.cli.SessionLaunch
+import tether.cli.SlashCommand
+import tether.cli.SlashCommands
 import tether.cli.obj
 import tether.cli.str
 import tether.cli.ImageBlock
@@ -65,6 +67,9 @@ interface ChatListener {
 
     /** A predicted next prompt, told only while the session is idle. */
     fun onSuggestion(text: String) {}
+
+    /** The slash commands the agent offers, each time it reports them (claude does once per process). */
+    fun onCommands(commands: List<SlashCommand>) {}
 
     /** The messages waiting for the running turn to end, oldest first (every change). */
     fun onQueue(messages: List<QueuedMessage>) {}
@@ -604,6 +609,7 @@ class ChatSession(
                     initRequestId = null
                     if (event.isSuccess) {
                         modelOptions = event.response?.let(Models::options).orEmpty()
+                        event.response?.let(SlashCommands::fromInitialize)?.let(listener::onCommands)
                         requestContextUsage()
                         requestSettings()
                     }

@@ -308,6 +308,7 @@ class AcpSession(
                 val percent = (update.used * 100 / update.size).toInt().coerceIn(0, 100)
                 listener.onContext(ContextUsage(update.used, update.size, percent, null, emptyList()))
             }
+            is AcpUpdate.Commands -> listener.onCommands(update.commands)
             is AcpUpdate.Other -> log("ACP update not shown: ${update.kind}")
         }
         reportActivity()

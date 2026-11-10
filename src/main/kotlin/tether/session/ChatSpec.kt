@@ -8,7 +8,8 @@ import tether.git.currentBranch
 /**
  * How a chat starts. [cwd] is the launch directory. For a new worktree it is the project and [worktree]
  * names the worktree claude creates (the chat then moves to the folder system/init reports). [title] is the name the
- * user gave a resumed session, if any. [setup] is what the chat was left with when it was last open.
+ * user gave a resumed session, if any. [setup] is what the chat was left with when it was last open, and [unsentText]
+ * the text its message box held then.
  */
 data class ChatSpec(
     val label: String,
@@ -21,6 +22,7 @@ data class ChatSpec(
     val agentId: String? = null,
     /** The mode a restored ACP session was left in, asked for again when it opens; Claude's mode is in [setup]. */
     val agentMode: String? = null,
+    val unsentText: String? = null,
 ) {
     companion object {
         const val MAIN = "main"

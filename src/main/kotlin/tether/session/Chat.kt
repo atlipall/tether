@@ -5,6 +5,7 @@ import tether.cli.ContextUsage
 import tether.cli.ModelChoice
 import tether.cli.PermissionMode
 import tether.cli.SessionLaunch
+import tether.cli.SlashCommand
 import tether.context.ContextNotes
 import tether.context.EditorContext
 import tether.git.WorkingTrees
@@ -46,6 +47,9 @@ interface SessionView {
 
     /** A predicted next prompt for the empty message box, valid until the next state other than IDLE. */
     fun suggestion(text: String) {}
+
+    /** The slash commands to offer while typing `/` at the start of the message box. */
+    fun commands(commands: List<SlashCommand>) {}
 
     /** The messages waiting for the running turn to end, oldest first; empty hides them. */
     fun queue(messages: List<QueuedMessage>) {}
@@ -141,6 +145,8 @@ class Chat(
     private val acpSession: (List<String>, ChatListener) -> AgentSession = { _, _ -> error("No ACP agent is configured.") },
     /** Called on the EDT when the user selects an agent for the draft. */
     private val onAgentSelected: (Agent) -> Unit = {},
+    /** The commands each agent last reported in any chat, offered by a chat whose own process hasn't reported yet. */
+    private val commandCatalog: CommandCatalog = CommandCatalog(),
     /** The name shown until the user gives one (`main`, `main 2`, a worktree name); follows later branch moves, see [followBranch]. */
     defaultName: String = spec.label,
     /** Stores a name the user gave in the session's transcript (blank: none), marked archived or not. Called off the EDT. */
@@ -181,6 +187,12 @@ class Chat(
     @Volatile var checkoutText: String = ""
         private set
 
+    /**
+     * The text in the message box not sent yet, as the page last reported it: given back to a reloaded page, and kept
+     * with the open chats so it survives a restart. Empty once the message is sent.
+     */
+    @Volatile var unsentText: String = spec.unsentText.orEmpty()
+
     /** True while a turn is running or waiting for the user, or background agents are working. */
     val busy: Boolean get() = synchronized(activityLock) { sessionActivity != null }
 
@@ -191,6 +203,8 @@ class Chat(
     @Volatile private var modelChoice: ModelChoice? = null
     /** The latest prompt suggestion, kept while the session stays idle (replayed on attach). */
     @Volatile private var suggestion: String? = null
+    /** The commands this chat's agent process reported; empty until it does. */
+    @Volatile private var commands: List<SlashCommand> = emptyList()
     /** The session's queued messages (replayed on attach). */
     @Volatile private var queued: List<QueuedMessage> = emptyList()
     /** The session's background processes, shown again to a view that attaches. */
@@ -237,6 +251,12 @@ class Chat(
         override fun onSuggestion(text: String) {
             suggestion = text
             view?.suggestion(text)
+        }
+
+        override fun onCommands(commands: List<SlashCommand>) {
+            this@Chat.commands = commands
+            commandCatalog.remember(agent, commands)
+            view?.commands(commands)
         }
 
         override fun onModes(modes: List<Choice>) {
@@ -425,6 +445,7 @@ class Chat(
         view.agent(agents, agent, started)
         view.modes(modes)
         view.state(session.state, session.modeId)
+        commands.ifEmpty { commandCatalog.commandsOf(agent) }.takeIf { it.isNotEmpty() }?.let(view::commands)
     }
 
     /** Shows [text] in the chat. A draft numbers its own notices: the session that will run may still change. */

@@ -49,6 +49,8 @@ class Chats(private val project: Project) : Disposable {
 
     private val chats = CopyOnWriteArrayList<Chat>()
     private val ids = AtomicInteger()
+    /** The slash commands each agent last reported, so a new chat can offer them before it starts. */
+    internal val commandCatalog = CommandCatalog()
 
     val projectDir: String get() = project.basePath ?: System.getProperty("user.home")
 
@@ -82,12 +84,12 @@ class Chats(private val project: Project) : Disposable {
                 return@mapNotNull null
             }
             val spec = ChatSpec(ChatNames.folderLabel(cwd, projectDir), cwd, resumeId = id,
-                title = saved.title, agentId = saved.agentId, agentMode = saved.agentMode)
+                title = saved.title, agentId = saved.agentId, agentMode = saved.agentMode, unsentText = saved.unsentText)
             return@mapNotNull spec to Transcript(emptyList(), null, null, null)
         }
         try {
             val transcript = store.read(cwd, id)
-            transcript.summary?.takeUnless { it.archived }?.let { ChatSpec.resume(projectDir, it).copy(setup = setup) to transcript }
+            transcript.summary?.takeUnless { it.archived }?.let { ChatSpec.resume(projectDir, it).copy(setup = setup, unsentText = saved.unsentText) to transcript }
         } catch (e: Exception) {
             if (e is ControlFlowException) throw e
             LOG.warn("Couldn't read session $id to reopen it", e)
@@ -149,6 +151,7 @@ class Chats(private val project: Project) : Disposable {
                     Agent.acp(command).name, { LOG.info(it) }, resumeId = spec.resumeId, mode = spec.agentMode)
             },
             onAgentSelected = { settings.lastAgent = it.id },
+            commandCatalog = commandCatalog,
         )
         tracker.register(chat.id)
         git.settle(chat.id, chat.cwd)

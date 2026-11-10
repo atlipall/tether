@@ -13,5 +13,6 @@ object WebAssets {
         .replace("/*INLINE:marked*/", script("vendor/marked.min.js"))
         .replace("/*INLINE:purify*/", script("vendor/purify.min.js"))
         .replace("/*INLINE:text-keys.js*/", script("text-keys.js"))
+        .replace("/*INLINE:completion.js*/", script("completion.js"))
         .replace("/*INLINE:chat.js*/", script("chat.js"))
 }

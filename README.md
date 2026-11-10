@@ -69,9 +69,11 @@ already has (e.g. your Claude Pro subscription). The plugin never reads, stores 
 - **A message box that behaves like a text field.** The usual caret and editing shortcuts work (Option/Cmd+arrows,
   Option+Delete, Control+A/E/K/Y/T on macOS; Ctrl+arrows, Home/End and Ctrl+Backspace elsewhere). Type `/` at the
   start for the agent's commands and skills, or `@` for project files (as Go to File finds them; an empty `@` offers
-  the open files). Esc in an empty box stops a running turn, Undo right after sending brings the text back, and
-  unsent text and images survive a reload of the chat page; in a chat that has started, the text also survives an
-  IDE restart.
+  the open files). Right after sending, Esc stops the turn and brings the text back (Undo brings it back without
+  stopping anything); once the turn has stopped, a second Esc opens **Revert to here** for that message, when it
+  offers one. A message that went into the queue is taken back with its row's Edit instead. Otherwise Esc in an
+  empty box stops a working turn. Unsent text and images survive a reload of the chat page; in a chat that has
+  started, the text also survives an IDE restart.
 - **Add to Tether** (Cmd+Shift+Option+K, or the editor context menu) inserts `@path#Lx-y`
   for the current selection.
 

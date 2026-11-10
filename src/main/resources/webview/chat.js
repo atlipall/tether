@@ -51,6 +51,18 @@
    * until the box is empty again.
    */
   let recall = -1;
+  /**
+   * The message just sent, while the box has stayed empty since: Escape brings it back. Null once the box changes, the
+   * chat is reset, or for a message that went into the queue (its row's Edit takes it back) or had no text.
+   */
+  let sentText = null;
+  /**
+   * The text Escape brought back, while the box still holds it untouched: another Escape asks to revert to before that
+   * message. Null once the box is edited.
+   */
+  let takenBack = null;
+  /** The text a requested revert will put back in the box, which already holds it; that copy is not added again. */
+  let rewinding = null;
   /** The predicted next prompt shown in the empty box; Tab takes it. */
   let suggestion = '';
   /** The last state was IDLE: a suggestion that lands later than a new turn's state is stale. */
@@ -160,6 +172,7 @@
       switch (msg.type) {
         case 'reset':
           items.clear(); childBoxes.clear(); waitingFor.clear(); waitingOn.clear(); parentOf.clear(); reports.clear();
+          sentText = takenBack = null;
           stubs.clear(); dismissed.clear(); stopping.clear();
           logContent.textContent = '';
           tasksEl.querySelectorAll(':scope > .agent').forEach((el) => el.remove());
@@ -340,6 +353,7 @@
    */
   function renderUser(el, item) {
     el.className = 'msg user';
+    el.dataset.text = typeof item.text === 'string' ? item.text.trim() : '';
     if (item.revertable) {
       el.append(h('button', { class: 'link revert', 'data-action': 'revertTo', 'data-id': item.id,
         title: 'Go back to before this message: files, conversation or both (asks first)' }, 'Revert to here'));
@@ -1243,6 +1257,7 @@
 
   /** Every programmatic change of the box's text goes through here, so its height follows and the host hears of it. */
   function setInput(text, caret = text.length) {
+    sentText = takenBack = rewinding = null;
     input.value = text;
     input.setSelectionRange(caret, caret);
     fitInput();
@@ -1508,6 +1523,9 @@
   }
 
   function insertText(text) {
+    const alreadyThere = rewinding !== null && text.trim() === rewinding.trim() && input.value === rewinding;
+    rewinding = null;
+    if (alreadyThere) return;
     recall = -1;
     const start = input.selectionStart, end = input.selectionEnd;
     const before = input.value.slice(0, start), after = input.value.slice(end);
@@ -1539,11 +1557,64 @@
    * Empties the box after a send as an edit, not by setting its value, so Undo straight afterwards brings the text
    * back to fix and send again. The images went with the message and don't come back.
    */
-  function clearSentText() {
+  function clearSentText(queued) {
+    const text = input.value;
     input.focus();
     input.select();
     document.execCommand('delete');
     if (input.value) setInput('');
+    sentText = queued || !text.trim() ? null : text;
+  }
+
+  /**
+   * Escape in the box, outside a completion list: a second Escape on the brought-back text asks to revert to before
+   * that message, once the turn has stopped and if the message can be reverted; in an empty box right after a send it
+   * stops the turn and brings the text back, as Undo does; in any other empty box it stops a working turn. False when
+   * it does none of these.
+   */
+  function onEscape() {
+    if (takenBack !== null && input.value === takenBack) return askToRevert();
+    if (input.value) return false;
+    if (sentText !== null) return takeBack();
+    if (!stoppable()) return false;
+    send({ type: 'interrupt' });
+    return true;
+  }
+
+  /**
+   * Puts the sent text back in the box, as one undoable edit, and stops what it started: the turn, even one waiting
+   * for the user's answer, or the send itself while it still waits for its notes.
+   */
+  function takeBack() {
+    send({ type: 'interrupt' });
+    const text = sentText;
+    input.focus();
+    document.execCommand('insertText', false, text);
+    completion.close();
+    sentText = null;
+    takenBack = text;
+    return true;
+  }
+
+  /** The "Revert to here" link of the message [text] became, if it is the newest one in the chat and offers one. */
+  function revertLinkFor(text) {
+    const newest = [...logContent.querySelectorAll(':scope > .msg.user')].pop();
+    if (!newest || newest.dataset.text !== text.trim()) return null;
+    return newest.querySelector('button.revert');
+  }
+
+  /**
+   * Opens "Revert to here" for the brought-back message through its own link; the dialog asks what to revert, so
+   * nothing changes without the user's choice. Waits while a turn is still stopping (Escape can ask again), and does
+   * nothing for a message that can't be reverted.
+   */
+  function askToRevert() {
+    if (activityPhase !== null) return true;
+    const link = revertLinkFor(takenBack);
+    if (!link) return false;
+    rewinding = takenBack;
+    link.click();
+    return true;
   }
 
   /** Sends the box's text with the attachments in the tray, once every image is ready. */
@@ -1554,9 +1625,10 @@
     if (tiles.some(([, p]) => !p.ready)) return;
     const attachments = tiles.map(([id]) => id);
     if (!text && !attachments.length) return;
+    const queued = activityPhase !== null;
     send({ type: 'send', text, attachments });
     attachments.forEach(removeTile);
-    clearSentText();
+    clearSentText(queued);
     recall = -1;
     setSuggestion('');
   }
@@ -1602,7 +1674,7 @@
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); return; }
     if (endsRecall(e)) recall = -1;
     if (hasModifier(e)) return;
-    if (e.key === 'Escape' && stoppable() && !input.value) { e.preventDefault(); send({ type: 'interrupt' }); return; }
+    if (e.key === 'Escape') { if (onEscape()) e.preventDefault(); return; }
     if (e.key === 'Tab' && suggestion && !input.value) { e.preventDefault(); acceptSuggestion(); return; }
     if (e.key === 'ArrowUp' && canRecallBack() && recallKey('up')) e.preventDefault();
     else if (e.key === 'ArrowDown' && recall !== -1 && recallKey('down')) e.preventDefault();
@@ -1614,7 +1686,10 @@
     document.getElementById('hint-commands').hidden = !commands.length;
   }
 
-  /** Whether Escape in an empty box stops the turn: it is working, not waiting for the user's answer. */
+  /**
+   * Whether Escape in an empty box stops the turn: it is working, not waiting for the user's answer. Right after a
+   * send, Escape stops it whatever it is doing, as it takes the message back (see [takeBack]).
+   */
   const stoppable = () => activityPhase !== null && activityPhase !== 'waiting';
 
   /** Completes `/name` at the very start of the box from the agent's commands; accepting leaves room for arguments. */
@@ -1665,9 +1740,10 @@
     text: (f) => f.mention + ' ',
   };
 
-  /** Typing ends recall, dismisses the suggestion and reports the text to the host. */
+  /** Typing ends recall and Escape's take-back, dismisses the suggestion and reports the text to the host. */
   function onTyped() {
     recall = -1;
+    sentText = takenBack = rewinding = null;
     if (suggestion) setSuggestion('');
     fitInput();
     saveUnsentTextSoon();
@@ -1676,8 +1752,8 @@
   input.addEventListener('blur', saveUnsentText);
   window.addEventListener('pagehide', saveUnsentText);
   window.TextKeys.install(input);
-  window.Completion.install(input, document.getElementById('completion'), document.getElementById('completion-status'),
-    [commandCompletion, fileCompletion]);
+  const completion = window.Completion.install(input, document.getElementById('completion'),
+    document.getElementById('completion-status'), [commandCompletion, fileCompletion]);
   fitInput();
   sendBtn.addEventListener('click', submit);
   activityStop.addEventListener('click', () => send({ type: 'interrupt' }));

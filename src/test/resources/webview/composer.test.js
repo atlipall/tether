@@ -343,6 +343,156 @@ window.runComposerTests = async function () {
     assert(!key('ArrowDown'), 'Down in an empty box does nothing');
   });
 
+  const sendMessage = (text, id) => {
+    clear();
+    type(text);
+    key('Enter');
+    receive({ type: 'item', item: { kind: 'user', id, text, revertable: true } });
+    receive({ type: 'activity', phase: 'thinking' });
+    window.__sent.length = 0;
+  };
+
+  await test('Escape right after sending stops the turn and brings the text back', () => {
+    sendMessage('take this back', 'u1');
+    assert(key('Escape'), 'Escape is handled');
+    assert(input.value === 'take this back', `The text is back: ${JSON.stringify(input.value)}`);
+    assert(sent('interrupt').length === 1, 'The running turn is stopped');
+    receive({ type: 'activity', phase: null });
+  });
+
+  await test('a second Escape asks to revert to before that message', () => {
+    sendMessage('revert me', 'u2');
+    key('Escape');
+    receive({ type: 'activity', phase: null });
+    assert(key('Escape'), 'The second Escape is handled');
+    const asks = sent('revertTo');
+    assert(asks.length === 1 && asks[0].id === 'u2', `Revert to here for the last message: ${JSON.stringify(asks)}`);
+  });
+
+  await test('the rewind that follows does not put the text in twice', () => {
+    sendMessage('only once', 'u3');
+    key('Escape');
+    receive({ type: 'activity', phase: null });
+    key('Escape');
+    receive({ type: 'insert', text: 'only once' });
+    assert(input.value === 'only once', `The text appears once: ${JSON.stringify(input.value)}`);
+  });
+
+  await test('the rewind copy is recognised though the sent text was trimmed', () => {
+    sendMessage('padded  ', 'u6');
+    key('Escape');
+    receive({ type: 'activity', phase: null });
+    key('Escape');
+    receive({ type: 'insert', text: 'padded' });
+    assert(input.value === 'padded  ', `No second copy: ${JSON.stringify(input.value)}`);
+  });
+
+  await test('a message sent while a turn runs is queued, and Escape leaves it and the turn alone', () => {
+    clear();
+    receive({ type: 'activity', phase: 'thinking' });
+    type('for later');
+    key('Enter');
+    window.__sent.length = 0;
+    key('Escape');
+    assert(input.value === '', 'The queued text is not brought back');
+    assert(sent('interrupt').length === 1, 'Escape in the empty box only stops the turn, as before');
+    receive({ type: 'activity', phase: null });
+  });
+
+  await test('taking back a message stops a turn even while it waits for an answer', () => {
+    sendMessage('asked a question', 'u7');
+    receive({ type: 'activity', phase: 'waiting' });
+    key('Escape');
+    assert(input.value === 'asked a question' && sent('interrupt').length === 1, 'Text back and the turn stopped');
+    receive({ type: 'activity', phase: null });
+  });
+
+  await test('the second Escape waits for the turn to stop before asking to revert', () => {
+    sendMessage('slow to stop', 'u8');
+    key('Escape');
+    assert(key('Escape') && sent('revertTo').length === 0, 'No revert while the turn is still stopping');
+    receive({ type: 'activity', phase: null });
+    key('Escape');
+    assert(sent('revertTo').length === 1 && sent('revertTo')[0].id === 'u8', 'It asks once the turn has stopped');
+  });
+
+  await test('the second Escape never reverts an older message', () => {
+    sendMessage('older', 'u9');
+    receive({ type: 'activity', phase: null });
+    clear();
+    type('newer, not shown yet');
+    key('Enter');
+    window.__sent.length = 0;
+    key('Escape');
+    assert(input.value === 'newer, not shown yet', 'The newer message is brought back');
+    key('Escape');
+    assert(sent('revertTo').length === 0, 'No revert for a message the chat does not show yet');
+  });
+
+  await test('a message that cannot be reverted is only brought back', () => {
+    clear();
+    type('no checkpoint');
+    key('Enter');
+    receive({ type: 'item', item: { kind: 'user', id: 'u10', text: 'no checkpoint', revertable: false } });
+    key('Escape');
+    assert(!key('Escape') && sent('revertTo').length === 0, 'The second Escape does nothing');
+  });
+
+  await test('a reset, recall or an image-only send leaves nothing to take back', () => {
+    sendMessage('before reset', 'u11');
+    receive({ type: 'activity', phase: null });
+    receive({ type: 'reset', items: [] });
+    key('Escape');
+    assert(input.value === '', 'Nothing comes back after a reset');
+    sendMessage('recalled', 'u12');
+    receive({ type: 'activity', phase: null });
+    receive({ type: 'history', entries: ['recalled'] });
+    key('ArrowUp');
+    key('ArrowDown');
+    key('Escape');
+    assert(input.value === '', 'Nothing comes back after recall returned to the empty box');
+  });
+
+  await test('brought-back text that starts a command leaves Escape free for the revert', () => {
+    sendMessage('/simplify', 'u13');
+    key('Escape');
+    receive({ type: 'activity', phase: null });
+    assert(list.hidden, 'No list opens for the brought-back text');
+    key('Escape');
+    assert(sent('revertTo').length === 1, 'The second Escape asks to revert');
+  });
+
+  await test('the rewind copy is skipped across the reset the rewind sends first', () => {
+    sendMessage('kept once', 'u14');
+    key('Escape');
+    receive({ type: 'activity', phase: null });
+    key('Escape');
+    receive({ type: 'reset', items: [] });
+    receive({ type: 'insert', text: 'kept once' });
+    assert(input.value === 'kept once', `One copy: ${JSON.stringify(input.value)}`);
+  });
+
+  await test('Escape brings nothing back once the user has typed since sending', () => {
+    sendMessage('sent', 'u4');
+    type('x');
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    window.__sent.length = 0;
+    key('Escape');
+    assert(input.value === '', 'The sent text stays sent');
+    assert(sent('interrupt').length === 1, 'Escape still stops the turn');
+    receive({ type: 'activity', phase: null });
+  });
+
+  await test('editing the brought-back text makes Escape a plain key again', () => {
+    sendMessage('edit me', 'u5');
+    key('Escape');
+    receive({ type: 'activity', phase: null });
+    type('!');
+    key('Escape');
+    assert(sent('revertTo').length === 0, 'No revert once the text was edited');
+  });
+
   clear();
   return results;
 };

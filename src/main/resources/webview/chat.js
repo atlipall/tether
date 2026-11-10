@@ -1040,13 +1040,8 @@
   }
 
   /**
-   * The model a choice runs, short enough for the composer's model chip: the CLI's descriptions lead with it ("Opus 5.5 · Most
-   * capable…"), which says more than a name like "Default (recommended)"; the name when there is no description.
-   */
-  const shortModelName = (o) => (o.description ? o.description.split(' · ')[0].trim() : '') || o.name;
-
-  /**
-   * The composer's model chip and the picker dialog show what the CLI says runs; the chip stays hidden until it says,
+   * The composer's model chip and the picker dialog show what the CLI says runs; the chip, labelled with the host's
+   * `modelName` (the model's own name, never an alias's), stays hidden until it says,
    * and the effort row shows only for a model that takes an effort. Every string is CLI text and goes in as text.
    * Claude metadata arriving after an agent change is discarded rather than reopening stale controls.
    */
@@ -1056,10 +1051,9 @@
       value: String(o.value), name: String(o.name), description: o.description ? String(o.description) : '',
     }));
     const model = String(msg.model || '');
-    const shown = options.find((o) => o.value === model);
     const efforts = (Array.isArray(msg.efforts) ? msg.efforts : []).map(String);
     const effort = msg.effort ? String(msg.effort) : '';
-    modelLabel.textContent = shown ? shortModelName(shown) : (model || 'Model');
+    modelLabel.textContent = String(msg.modelName || model || 'Model');
     effortLabel.textContent = effort && efforts.length ? capitalize(effort) : '';
     effortLabel.hidden = !effortLabel.textContent;
     modelBtn.hidden = !options.length;

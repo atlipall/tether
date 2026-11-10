@@ -52,6 +52,17 @@ class ModelsTest {
         assertEquals("without effort it offers none", emptyList<String>(), ModelChoice.of(options, null, RunningModel("custom", null)).efforts)
     }
 
+    @Test fun theChipNamesTheModelRatherThanTheDefaultAlias() {
+        assertEquals("Opus 5.5", ModelChoice.of(options, null, RunningModel("claude-opus-5-5", "high")).modelName)
+        assertEquals("Sonnet 5.5", ModelChoice.of(options, "sonnet", RunningModel("claude-sonnet-5-5", "high")).modelName)
+        val fable = listOf(ModelOption("default", "claude-fable-5-2", "Default (recommended)", "For your toughest challenges", emptyList()),
+            ModelOption("fable", "claude-fable-5-2", "Fable 5.2", "For your toughest challenges", emptyList()))
+        assertEquals("Fable 5.2", ModelChoice(fable, "default", null).modelName)
+        assertEquals("Fable 5.2", ModelChoice(fable, "fable", null).modelName)
+        assertEquals("a default no other option names keeps its own name", "Default (recommended)", ModelChoice(fable.take(1), "default", null).modelName)
+        assertEquals("a custom id is its own name", "claude-opus-5-5[1m]", ModelChoice.of(options, null, RunningModel("claude-opus-5-5[1m]", "high")).modelName)
+    }
+
     @Test fun aModelWithoutEffortOffersNoLevels() =
         assertEquals(emptyList<String>(), ModelChoice.of(options, null, RunningModel("claude-haiku-4-5-20251001", null)).efforts)
 }

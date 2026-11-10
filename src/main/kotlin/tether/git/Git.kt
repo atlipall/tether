@@ -25,23 +25,32 @@ fun GitRunner.output(dir: File, vararg args: String): String? = this(dir, args.t
 /** The full hash of the commit [rev] names in [dir], or null when it names none. */
 fun GitRunner.commit(dir: File, rev: String): String? = output(dir, "rev-parse", "--verify", "-q", "$rev^{commit}")
 
-/** Runs the blocking reads and writes of git's pipes, so they never tie up the shared ForkJoin pool. */
-private val pipeThreads = Executor { Thread.ofVirtual().name("tether-git-pipe").start(it) }
+/** Runs the blocking reads and writes of child processes' pipes, so they never tie up the shared ForkJoin pool. */
+private val pipeThreads = Executor { Thread.ofVirtual().name("tether-process-pipe").start(it) }
 
 /**
  * Like [runGit], but returns stdout as bytes (file contents); [env] is added to git's environment, [input] is its stdin.
- * Stdout is read and stdin written on other threads, so a hung git (a lock, a prompt) still times out and git can fill
- * stdout before it has read all of stdin. Optional locks are off, so a background diff never holds the index lock while
- * Claude's own git needs it.
+ * Optional locks are off, so a background diff never holds the index lock while Claude's own git needs it.
  */
 fun runGitBytes(
     dir: File, vararg args: String, timeoutSeconds: Long = 5, env: Map<String, String> = emptyMap(), input: ByteArray? = null,
+): ByteArray? = runProcessBytes(
+    listOf("git", *args), dir, timeoutSeconds,
+    mapOf("GIT_TERMINAL_PROMPT" to "0", "GIT_OPTIONAL_LOCKS" to "0") + env, input,
+)
+
+/**
+ * Runs [command] in [dir] and returns its stdout, or null when it can't start, exits non-zero or takes longer than
+ * [timeoutSeconds]. [env] is added to the IDE's environment, [input] is its stdin; stderr is discarded. Stdout is read
+ * and stdin written on other threads, so a hung process (a lock, a prompt) still times out and it can fill stdout
+ * before it has read all of stdin.
+ */
+fun runProcessBytes(
+    command: List<String>, dir: File, timeoutSeconds: Long, env: Map<String, String> = emptyMap(), input: ByteArray? = null,
 ): ByteArray? = try {
-    val builder = ProcessBuilder("git", *args)
+    val builder = ProcessBuilder(command)
         .directory(dir)
         .redirectError(ProcessBuilder.Redirect.DISCARD)
-    builder.environment()["GIT_TERMINAL_PROMPT"] = "0"
-    builder.environment()["GIT_OPTIONAL_LOCKS"] = "0"
     builder.environment().putAll(env)
     val process = builder.start()
     val out = CompletableFuture.supplyAsync({ process.inputStream.readBytes() }, pipeThreads)

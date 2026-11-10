@@ -11,6 +11,7 @@ import tether.cli.PermissionMode
 import tether.cli.SessionLaunch
 import tether.git.DiffBases
 import tether.git.GitWorktrees
+import tether.git.PullRequests
 import tether.context.EditorContextService
 import tether.ide.EditTracker
 import tether.ide.GitTracker
@@ -65,6 +66,7 @@ class Chats(private val project: Project) : Disposable {
     private val checkpoints = TurnCheckpoints.getInstance(project)
     /** Cached like [tracker]. */
     private val git = GitTracker.getInstance(project)
+    private val pullRequests = PullRequests()
 
     fun all(): List<Chat> = chats.toList()
 
@@ -152,11 +154,13 @@ class Chats(private val project: Project) : Disposable {
             },
             onAgentSelected = { settings.lastAgent = it.id },
             commandCatalog = commandCatalog,
+            findPullRequest = pullRequests::find,
         )
         tracker.register(chat.id)
         git.settle(chat.id, chat.cwd)
         chats += chat
         recordStartCommit(chat, spec)
+        chat.refreshPullRequest()
         if (spec.resumeId != null) chat.start()
         return chat
     }

@@ -29,6 +29,8 @@
   const restartBtn = document.getElementById('restart');
   const statusEl = document.getElementById('status');
   const checkoutEl = document.getElementById('checkout');
+  const openPrBtn = document.getElementById('open-pr');
+  const openPrNumber = document.getElementById('open-pr-number');
   const usageEl = document.getElementById('usage');
   const usageRing = document.getElementById('usage-ring');
   const usagePct = document.getElementById('usage-pct');
@@ -197,6 +199,7 @@
         case 'history': history = Array.isArray(msg.entries) ? msg.entries : []; break;
         case 'commands': setCommands(Array.isArray(msg.items) ? msg.items : []); break;
         case 'checkout': setCheckout(msg.text); break;
+        case 'pullRequest': setPullRequest(msg); break;
         case 'usage': setUsage(msg); break;
         case 'model': setModel(msg); break;
         case 'attachment': setAttachment(msg); break;
@@ -1347,6 +1350,35 @@
     checkoutEl.hidden = !checkoutEl.textContent;
   }
 
+  /** Longest pull request title the tooltip quotes in full; longer ones end in an ellipsis. */
+  const PR_TITLE_MAX = 80;
+
+  /** How the tooltip names a pull request in each status the IDE sends; an open one needs no word. */
+  const PR_STATUS_WORD = { draft: 'draft ', merged: 'merged ' };
+
+  /**
+   * Shows the branch's pull request as `#<number>` beside View changes when the IDE found one (the IDE checks the
+   * URL), and hides the button otherwise. The tooltip says what a click does and to which pull request: its title, and
+   * whether it is a draft or already merged. Plain text only: the title never becomes markup.
+   */
+  function setPullRequest(msg) {
+    const found = typeof msg.url === 'string' && Number.isInteger(msg.number);
+    openPrBtn.hidden = !found;
+    if (!found) return;
+    openPrBtn.dataset.url = msg.url;
+    openPrNumber.textContent = `#${msg.number}`;
+    openPrBtn.setAttribute('aria-label', `Pull request #${msg.number}`);
+    openPrBtn.title = pullRequestTooltip(msg.title, msg.status);
+  }
+
+  /** `Open “<title>” on GitHub`, naming a draft or merged pull request as such; without a title, `the pull request`. */
+  function pullRequestTooltip(title, status) {
+    const kind = PR_STATUS_WORD[status] ?? '';
+    const text = typeof title === 'string' ? title.trim() : '';
+    const shown = text.length > PR_TITLE_MAX ? `${text.slice(0, PR_TITLE_MAX - 1).trimEnd()}…` : text;
+    return shown ? `Open ${kind}“${shown}” on GitHub` : `Open the ${kind}pull request on GitHub`;
+  }
+
   /** The meter turns amber within this many percent of the window of autocompact (or of the window's end without it). */
   const USAGE_WARN_POINTS = 10;
   function fmtTokens(n) {
@@ -1753,6 +1785,7 @@
   activityStop.addEventListener('click', () => send({ type: 'interrupt' }));
   restartBtn.addEventListener('click', () => send({ type: 'restart' }));
   document.getElementById('show-changes').addEventListener('click', () => send({ type: 'showChanges' }));
+  openPrBtn.addEventListener('click', () => { if (!openPrBtn.hidden) send({ type: 'openUrl', url: openPrBtn.dataset.url }); });
   for (const picker of pickers) {
     picker.button.addEventListener('click', () => (picker.menu.hidden ? openMenu(picker) : closeMenu(picker, true)));
     picker.button.addEventListener('keydown', (e) => {

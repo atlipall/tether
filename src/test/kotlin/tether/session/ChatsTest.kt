@@ -606,6 +606,48 @@ class ChatsTest : BasePlatformTestCase() {
         assertEquals(listOf("IDE: wt1", "IDE: main"), view.checkouts)
     }
 
+    fun testPullRequestIsLookedUpWhenATurnEndsKeptWhenALookupFailsAndReplayedOnAttach() {
+        val repo = gitRepo() ?: return
+        val connection = FakeConnection()
+        var answer: tether.git.PullRequestLookup = tether.git.PullRequestLookup.None
+        val asked = mutableListOf<Pair<String, String>>()
+        val chat = Chat(
+            id = 98, spec = ChatSpec.inProject(repo.path), history = emptyList(), connector = { connection },
+            editNote = { null },
+            findPullRequest = { dir, branch -> asked += dir to branch; answer },
+        )
+        try {
+            chat.refreshPullRequest()
+            val view = object : SessionView by RecordingView() {
+                val pullRequests = mutableListOf<tether.git.PullRequest?>()
+                override fun pullRequest(pr: tether.git.PullRequest?) { pullRequests += pr }
+            }
+            chat.attach(view)
+            assertEquals(emptyList<tether.git.PullRequest?>(), view.pullRequests)
+            val opened = tether.git.PullRequest(5, "https://github.com/o/r/pull/5", "Five", tether.git.PullRequest.Status.OPEN)
+            answer = tether.git.PullRequestLookup.Found(opened)
+            chat.start()
+            chat.send("open a pr")
+            connection.emit(Fx.result())
+            assertEquals(listOf<tether.git.PullRequest?>(opened), view.pullRequests)
+            assertEquals(opened, chat.pullRequest)
+            assertEquals(listOf(repo.path to "main", repo.path to "main"), asked)
+            answer = tether.git.PullRequestLookup.Failed
+            chat.send("again")
+            connection.emit(Fx.result())
+            assertEquals(opened, chat.pullRequest)
+            assertEquals(listOf<tether.git.PullRequest?>(opened), view.pullRequests)
+            val reattached = object : SessionView by RecordingView() {
+                val pullRequests = mutableListOf<tether.git.PullRequest?>()
+                override fun pullRequest(pr: tether.git.PullRequest?) { pullRequests += pr }
+            }
+            chat.attach(reattached)
+            assertEquals(listOf<tether.git.PullRequest?>(opened), reattached.pullRequests)
+        } finally {
+            chat.dispose()
+        }
+    }
+
     fun testContextUsageReachesTheViewAndIsReplayedOnAttach() {
         val chat = chats.open(ChatSpec.inProject(root)).also { it.start() }
         val conn = connections.single()

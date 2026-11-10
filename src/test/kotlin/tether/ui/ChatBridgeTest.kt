@@ -10,6 +10,7 @@ import tether.cli.obj
 import tether.cli.parseJsonObject
 import tether.cli.str
 import tether.context.EditorContextService
+import tether.git.PullRequest
 import tether.session.Chat
 import tether.session.ChatSpec
 import tether.session.Chats
@@ -493,6 +494,25 @@ class ChatBridgeTest : BasePlatformTestCase() {
         chat.showCheckout("IDE: main")
         bridge.handle("""{"type":"ready"}""")
         assertEquals(listOf("theme", "history", "reset", "agent", "modes", "state", "checkout"), types())
+    }
+
+    fun testPullRequestIsPostedWithItsNumberUrlTitleAndStatus() {
+        bridge.handle("""{"type":"ready"}""")
+        bridge.pullRequest(PullRequest(12, "https://github.com/o/r/pull/12", "Add a button", PullRequest.Status.DRAFT))
+        val msg = posted.last()
+        assertEquals("pullRequest", msg.str("type"))
+        assertEquals(12L, msg.long("number"))
+        assertEquals("https://github.com/o/r/pull/12", msg.str("url"))
+        assertEquals("Add a button", msg.str("title"))
+        assertEquals("draft", msg.str("status"))
+    }
+
+    fun testNoPullRequestIsPostedWithoutAnUrl() {
+        bridge.handle("""{"type":"ready"}""")
+        bridge.pullRequest(null)
+        val msg = posted.last()
+        assertEquals("pullRequest", msg.str("type"))
+        assertEquals(null, msg.str("url"))
     }
 
     fun testDisposedBridgeStopsReceivingHistory() {

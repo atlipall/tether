@@ -46,6 +46,17 @@ class WebAssetsTest {
         assertTrue(page.contains("<button id=\"show-changes\" class=\"icon\" aria-label=\"View changes\""))
     }
 
+    @Test fun openPullRequestIsAHiddenNumberedButtonBesideViewChanges() {
+        val page = WebAssets.page()
+        assertTrue(page.contains("</button>\n  <button id=\"open-pr\" class=\"icon labelled\" hidden>"))
+        assertTrue(page.contains("<span id=\"open-pr-number\"></span></button>"))
+        assertTrue(page.contains("openPrNumber.textContent = `#\${msg.number}`;"))
+        assertFalse(page.contains("openPrNumber.innerHTML"))
+        assertTrue(page.contains("#bar button.icon[hidden] { display: none; }"))
+        assertTrue(page.contains("case 'pullRequest': setPullRequest(msg);"))
+        assertTrue(page.contains("send({ type: 'openUrl', url: openPrBtn.dataset.url })"))
+    }
+
     @Test fun pageShowsCheckoutAsPlainText() {
         val page = WebAssets.page()
         assertTrue(page.contains("<span id=\"checkout\" hidden></span>"))

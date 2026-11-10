@@ -17,6 +17,8 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 #checkout { color: var(--muted); font-size: .9em; overflow-wrap: anywhere; }
 #bar button.icon { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
 #bar button.icon svg { width: 15px; height: 15px; }
+#bar button.icon[hidden] { display: none; }
+#bar button.icon.labelled { gap: 4px; padding-right: 7px; font-variant-numeric: tabular-nums; }
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; font-size: .9em; padding: 0 6px; background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--muted); }
 .chip:hover:not(:disabled), .chip[aria-expanded="true"] { background: var(--code-bg); border-color: var(--border); color: var(--fg); }
 .chip[hidden] { display: none; }

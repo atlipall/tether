@@ -8,6 +8,7 @@ import tether.cli.arr
 import tether.cli.long
 import tether.cli.parseJsonObject
 import tether.cli.str
+import tether.git.PullRequest
 import tether.ide.CheckoutDiff
 import tether.ide.FileFinder
 import tether.ide.FileLinker
@@ -476,6 +477,16 @@ class ChatBridge(
     override fun checkout(text: String) = post(buildJsonObject {
         put("type", "checkout")
         put("text", text)
+    }.toString())
+
+    override fun pullRequest(pr: PullRequest?) = post(buildJsonObject {
+        put("type", "pullRequest")
+        pr?.let {
+            put("number", it.number)
+            put("url", it.url)
+            put("title", it.title)
+            put("status", it.status.name.lowercase())
+        }
     }.toString())
 
     /** `{ "<question>": { "labels": [..], "other": ".." } }`, or null if the shape is wrong anywhere (the session checks the content). */

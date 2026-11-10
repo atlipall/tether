@@ -8,6 +8,8 @@ import tether.cli.SessionLaunch
 import tether.cli.SlashCommand
 import tether.context.ContextNotes
 import tether.context.EditorContext
+import tether.git.PullRequest
+import tether.git.PullRequestLookup
 import tether.git.WorkingTrees
 import tether.git.WorktreeBranches
 import tether.git.currentBranch
@@ -35,6 +37,9 @@ interface SessionView {
 
     /** What the IDE window shows for this chat (`IDE: <checkout>`); empty hides it. */
     fun checkout(text: String) {}
+
+    /** The GitHub pull request for the chat's branch; null hides the button that opens it. */
+    fun pullRequest(pr: PullRequest?) {}
 
     /** What Claude is doing now (changes only); null when no turn is running. */
     fun activity(activity: Activity?) {}
@@ -153,6 +158,8 @@ class Chat(
     private val saveTitle: ((cwd: String, sessionId: String, title: String, archived: Boolean) -> Unit)? = null,
     /** The default name for a chat moved to a branch shown as the given name, numbered past the other chats' names. */
     private val nameForBranch: (String) -> String = { it },
+    /** The pull request for a folder and branch, looked up through [background] (blocks); null looks none up. */
+    private val findPullRequest: ((dir: String, branch: String) -> PullRequestLookup)? = null,
 ) {
     val label: String = spec.label
 
@@ -303,7 +310,8 @@ class Chat(
             if (state != SessionState.IDLE) suggestion = null
             idleSince = if (state == SessionState.IDLE) idleSince ?: System.currentTimeMillis() else null
             val running = state == SessionState.RUNNING || state == SessionState.AWAITING_PERMISSION
-            if (inTurn && !running) gitNotes?.turnEnded(this@Chat)
+            val turnEnded = inTurn && !running
+            if (turnEnded) gitNotes?.turnEnded(this@Chat)
             inTurn = running
             saveTitleIfReady()
             view?.state(state, session.modeId)
@@ -312,7 +320,8 @@ class Chat(
                 knownCwd = now
                 onCwdChanged?.invoke()
             }
-            followBranch()
+            val branchMoved = followBranch()
+            if (turnEnded || branchMoved) refreshPullRequest()
         }
     }
 
@@ -370,17 +379,18 @@ class Chat(
      * created or switched to, or the branch of a folder the chat moved to. The default name changes even when the user
      * named the chat, so clearing that name shows the current branch; only an unnamed chat's [title] changes.
      * Detached HEAD keeps the name. Checked only when this chat's session changes state, so an idle chat on the same
-     * checkout catches up with its next turn. Session lock held.
+     * checkout catches up with its next turn. Session lock held. Returns whether the branch moved.
      */
-    private fun followBranch() {
-        if (cwdIsGuess) return
-        val branch = currentBranch(cwd) ?: return
-        if (branch == knownBranch) return
+    private fun followBranch(): Boolean {
+        if (cwdIsGuess) return false
+        val branch = currentBranch(cwd) ?: return false
+        if (branch == knownBranch) return false
         knownBranch = branch
         val name = nameForBranch(WorktreeBranches.displayName(branch))
-        if (name == defaultName) return
+        if (name == defaultName) return true
         defaultName = name
         if (customTitle == null) onTitleChanged?.invoke()
+        return true
     }
 
     /** Renames the chat; a blank [name] restores the default. The name is saved with the session, now or once it has an id. EDT. */
@@ -461,6 +471,7 @@ class Chat(
         showAgent(view)
         synchronized(activityLock) { shownActivity }?.let(view::activity)
         checkoutText.takeIf { it.isNotEmpty() }?.let(view::checkout)
+        pullRequest?.let(view::pullRequest)
         contextUsage?.let(view::context)
         modelChoice?.let(view::model)
         suggestion?.let(view::suggestion)
@@ -476,6 +487,47 @@ class Chat(
     fun insert(text: String) {
         val v = view
         if (v != null) v.insert(text) else synchronized(lock) { pendingInsert = text }
+    }
+
+    /** The pull request for [cwd]'s branch, as last looked up ([refreshPullRequest]); null for none. */
+    @Volatile var pullRequest: PullRequest? = null
+        private set
+
+    /** Counts lookups, so only the latest one's answer is shown. */
+    private val pullRequestLookups = AtomicInteger()
+    private val pullRequestLock = Any()
+
+    /**
+     * Looks up the pull request for [cwd]'s branch in the background and shows it when it changed; a failed lookup
+     * keeps what is shown. Outside a branch (detached, not a repository) there is none to look up. Called when the
+     * chat opens, when a turn ends (Claude may have opened one) and when the branch changes. Any thread; returns at once.
+     */
+    fun refreshPullRequest() {
+        val find = findPullRequest ?: return
+        if (cwdIsGuess) return
+        val dir = cwd
+        val lookup = pullRequestLookups.incrementAndGet()
+        val branch = currentBranch(dir)
+        if (branch == null) {
+            show(lookup, null)
+            return
+        }
+        background {
+            when (val result = find(dir, branch)) {
+                is PullRequestLookup.Found -> show(lookup, result.pullRequest)
+                PullRequestLookup.None -> show(lookup, null)
+                PullRequestLookup.Failed -> {}
+            }
+        }
+    }
+
+    /** Shows [found] unless a later lookup ([pullRequestLookups]) has started since [lookup]. */
+    private fun show(lookup: Int, found: PullRequest?) {
+        synchronized(pullRequestLock) {
+            if (lookup != pullRequestLookups.get() || found == pullRequest) return
+            pullRequest = found
+            view?.pullRequest(found)
+        }
     }
 
     fun showCheckout(text: String) {

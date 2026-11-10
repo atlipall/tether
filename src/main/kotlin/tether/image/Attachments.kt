@@ -28,4 +28,7 @@ class PendingAttachments(private val max: Int = Images.MAX_PER_MESSAGE) {
     fun take(ids: List<String>): List<Attachment> = ids.distinct().mapNotNull { items.remove(it) }
 
     fun clear() = items.clear()
+
+    /** The waiting attachments, in the order they were added. */
+    fun all(): List<Attachment> = items.values.toList()
 }

@@ -60,6 +60,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
         super.setUp()
         PromptHistory.getInstance(project).clear()
         chats.closeAll()
+        chats.commandCatalog.clear()
         manager.openFiles.forEach(manager::closeFile)
         savedAttach = settings.attachEditorContext
         settings.attachEditorContext = true
@@ -343,6 +344,72 @@ class ChatBridgeTest : BasePlatformTestCase() {
         assertTrue(cleaned.length <= 60 && '`' !in cleaned && '\n' !in cleaned)
         assertFalse(shown[1].containsKey("description"))
         assertFalse(parseJsonObject(ChatBridge.modelMessage(tether.cli.ModelChoice(options, "x", null)))!!.containsKey("effort"))
+    }
+
+    fun testCommandsMessageCleansAndCapsDescriptions() {
+        val msg = parseJsonObject(ChatBridge.commandsMessage(listOf(
+            tether.cli.SlashCommand("review", "Review a\npull request", "<pr>"),
+            tether.cli.SlashCommand("long", "d".repeat(500), ""),
+        )))!!
+        assertEquals("commands", msg.str("type"))
+        val items = msg.arr("items")!!.map { it.jsonObject }
+        assertEquals(listOf("review", "long"), items.map { it.str("name") })
+        assertEquals("Review a pull request", items[0].str("description"))
+        assertEquals("<pr>", items[0].str("hint"))
+        assertTrue(items[1].str("description")!!.length <= ChatBridge.MAX_COMMAND_TEXT)
+    }
+
+    fun testTheCommandsTheCliReportsReachThePage() {
+        chat.start()
+        bridge.handle("""{"type":"ready"}""")
+        val conn = connections.single()
+        conn.emit(Fx.initResponseWithCommands(conn.lastRequestId("initialize"), """[{"name":"simplify","description":"Simplify code","argumentHint":""}]"""))
+        val shown = posted.last { it.str("type") == "commands" }
+        assertEquals("simplify", shown.arr("items")!!.single().jsonObject.str("name"))
+    }
+
+    fun testANewChatOffersTheCommandsItsAgentLastReported() {
+        chat.start()
+        val conn = connections.single()
+        conn.emit(Fx.initResponseWithCommands(conn.lastRequestId("initialize"), """[{"name":"simplify","description":"Simplify code","argumentHint":""}]"""))
+        val fresh = chats.open(ChatSpec("wt-2", "$root/.claude/worktrees/wt-2"))
+        val freshPosted = mutableListOf<JsonObject>()
+        ChatBridge(project, fresh) { freshPosted += parseJsonObject(it)!! }.handle("""{"type":"ready"}""")
+        assertEquals("simplify", freshPosted.last { it.str("type") == "commands" }.arr("items")!!.single().jsonObject.str("name"))
+    }
+
+    fun testNoCommandsMessageWhenNoneAreKnown() {
+        bridge.handle("""{"type":"ready"}""")
+        assertTrue(posted.none { it.str("type") == "commands" })
+    }
+
+    fun testFindFilesAnswersWithPathsTheChatCanMention() {
+        myFixture.addFileToProject("src/webview/chat.js", "")
+        bridge.handle("""{"type":"findFiles","reqId":7,"query":"chat.js"}""")
+        val answer = filesAnswer()
+        assertEquals(7L, answer.long("reqId"))
+        val item = answer.arr("items")!!.single().jsonObject
+        assertEquals("@src/webview/chat.js", item.str("mention"))
+        assertEquals("chat.js", item.str("name"))
+        assertEquals("src/webview", item.str("folder"))
+    }
+
+    fun testFindFilesAnswersEvenWithoutAQuery() {
+        bridge.handle("""{"type":"findFiles","reqId":8}""")
+        assertEquals(8L, filesAnswer().long("reqId"))
+    }
+
+    fun testANewerFileSearchIsTheOneAnswered() {
+        myFixture.addFileToProject("src/webview/chat.js", "")
+        bridge.handle("""{"type":"findFiles","reqId":1,"query":"c"}""")
+        bridge.handle("""{"type":"findFiles","reqId":2,"query":"chat.js"}""")
+        assertEquals(2L, filesAnswer().long("reqId"))
+    }
+
+    /** The page's answer to its file search, once the background search has finished. */
+    private fun filesAnswer(): JsonObject {
+        PlatformTestUtil.waitWithEventsDispatching("no files answer", { posted.any { it.str("type") == "files" } }, 10)
+        return posted.last { it.str("type") == "files" }
     }
 
     fun testResolvePathsReturnsOnlyExistingFiles() {
@@ -632,11 +699,55 @@ class ChatBridgeTest : BasePlatformTestCase() {
         assertEquals(0, chat.attachments.size)
     }
 
-    fun testReloadedPageForgetsTheOldPagesAttachments() {
+    fun testReloadedPageGetsTheUnsentTextAndAttachmentsBack() {
         bridge.handle("""{"type":"ready"}""")
         upload("p1", TestImages.BLUE_PNG_BASE64)
+        bridge.handle("""{"type":"unsentText","text":"half a thought"}""")
+        posted.clear()
         bridge.handle("""{"type":"ready"}""")
+        assertEquals(1, chat.attachments.size)
+        assertEquals("p1", lastAttachment().str("id"))
+        assertEquals("half a thought", posted.last { it.str("type") == "unsentText" }.str("text"))
+    }
+
+    fun testReloadedPageDropsUnfinishedUploads() {
+        bridge.handle("""{"type":"ready"}""")
+        bridge.handle("""{"type":"attachStart","id":"p1","name":"p1.png","size":100}""")
+        bridge.handle("""{"type":"ready"}""")
+        bridge.handle("""{"type":"attachEnd","id":"p1"}""")
         assertEquals(0, chat.attachments.size)
+    }
+
+    fun testNoUnsentTextIsPostedWhenThereIsNone() {
+        bridge.handle("""{"type":"ready"}""")
+        assertTrue(posted.none { it.str("type") == "unsentText" })
+    }
+
+    fun testSendingClearsTheUnsentText() {
+        bridge.handle("""{"type":"ready"}""")
+        bridge.handle("""{"type":"unsentText","text":"hello"}""")
+        bridge.handle("""{"type":"send","text":"hello","attachments":[]}""")
+        assertEquals("", chat.unsentText)
+    }
+
+    fun testOversizeUnsentTextKeepsNothing() {
+        bridge.handle("""{"type":"unsentText","text":"shorter, earlier"}""")
+        bridge.handle("""{"type":"unsentText","text":"${"x".repeat(ChatBridge.MAX_UNSENT_CHARS + 1)}"}""")
+        assertEquals("", chat.unsentText)
+    }
+
+    fun testAReplyWithoutCommandsKeepsTheOnesOtherChatsOffer() {
+        chat.start()
+        val conn = connections.single()
+        conn.emit(Fx.initResponseWithCommands(conn.lastRequestId("initialize"), """[{"name":"simplify"}]"""))
+        chats.open(ChatSpec("wt-3", "$root/.claude/worktrees/wt-3")).start()
+        connections[1].emit(Fx.initResponse(connections[1].lastRequestId("initialize")))
+        assertEquals(listOf("simplify"), chats.commandCatalog.commandsOf(tether.session.Agent.CLAUDE).map { it.name })
+    }
+
+    fun testARestoredChatStartsWithItsUnsentText() {
+        val restored = chats.open(ChatSpec.inProject(root).copy(unsentText = "left over"))
+        assertEquals("left over", restored.unsentText)
     }
 
     fun testPickedFilesBecomeAttachments() {

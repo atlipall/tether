@@ -1,14 +1,19 @@
 package tether.ui
 
 import tether.cli.ContextUsage
+import java.util.concurrent.CancellationException
 import tether.cli.ModelChoice
+import tether.cli.SlashCommand
 import tether.cli.arr
 import tether.cli.long
 import tether.cli.parseJsonObject
 import tether.cli.str
 import tether.ide.CheckoutDiff
+import tether.ide.FileFinder
 import tether.ide.FileLinker
+import tether.ide.Mention
 import tether.ide.ResolvedPath
+import tether.ide.TetherTarget
 import tether.image.Attachment
 import tether.image.Image
 import tether.image.Images
@@ -31,6 +36,8 @@ import tether.session.SessionView
 import tether.session.toJson
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.openapi.fileChooser.FileChooser
@@ -113,13 +120,15 @@ class ChatBridge(
                 post(Theme.message())
                 post(historyMessage(history.entries()))
                 if (unsubscribe == null) unsubscribe = history.subscribe { post(historyMessage(it)) }
-                forgetAttachments()
+                dropUnfinishedUploads()
                 chat.attach(this)
+                restoreComposer()
             }
             "send" -> {
                 val text = msg.str("text").orEmpty()
                 val images = chat.attachments.take(strings(msg["attachments"]))
                 if (text.isBlank() && images.isEmpty()) return
+                chat.unsentText = ""
                 remember(text)
                 chat.send(text, images)
             }
@@ -144,6 +153,7 @@ class ChatBridge(
                 val (name, bytes) = uploads.finish(id) ?: return
                 prepare(id, name) { bytes }
             }
+            "unsentText" -> msg.str("text")?.let { chat.unsentText = it.takeIf { text -> text.length <= MAX_UNSENT_CHARS }.orEmpty() }
             "detach" -> msg.str("id")?.let { id ->
                 uploads.cancel(id)
                 preparing.remove(id)
@@ -188,6 +198,7 @@ class ChatBridge(
             }
             "openTurnChanges" -> turnDiffs(msg)?.let(showTurnChanges)
             "openUrl" -> msg.str("url")?.takeIf { it.startsWith("https://") || it.startsWith("http://") }?.let(BrowserUtil::browse)
+            "findFiles" -> findFiles(msg.long("reqId") ?: 0, msg.str("query").orEmpty().take(MAX_FILE_QUERY))
             "resolvePaths" -> resolvePaths(msg.long("reqId") ?: 0, msg.arr("candidates").orEmpty().mapNotNull { (it as? JsonPrimitive)?.content }.distinct().take(MAX_PATH_CANDIDATES))
             "openImage" -> openImage(msg)
             "resolveImages" -> resolveImages(msg.long("reqId") ?: 0, strings(msg["paths"]).distinct().take(MAX_IMAGE_PATHS))
@@ -233,11 +244,21 @@ class ChatBridge(
     /** The local file at [path], refreshed into the VFS. Off the EDT. */
     private fun localFile(path: Path): VirtualFile? = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path)
 
-    /** Forgets every attachment, started upload and preparation: a (re)loaded page shows none. */
-    private fun forgetAttachments() {
+    /** Forgets uploads and preparations a previous page started: a (re)loaded page has no tiles waiting for them. */
+    private fun dropUnfinishedUploads() {
         uploads.clear()
         preparing.clear()
-        chat.attachments.clear()
+    }
+
+    /** Gives a (re)loaded page the chat's waiting attachments and unsent text, so a reload loses neither. */
+    private fun restoreComposer() {
+        chat.attachments.all().forEach { post(attachmentMessage(it.id, it.name, it.thumb)) }
+        chat.unsentText.takeIf { it.isNotEmpty() }?.let { text ->
+            post(buildJsonObject {
+                put("type", "unsentText")
+                put("text", text)
+            }.toString())
+        }
     }
 
     /** Adds [text] to the input history, unless it is blank (history keeps text only) or the chat is dead ([Chat.send] ignores it). */
@@ -450,6 +471,8 @@ class ChatBridge(
         put("text", text)
     }.toString())
 
+    override fun commands(commands: List<SlashCommand>) = post(commandsMessage(commands))
+
     override fun checkout(text: String) = post(buildJsonObject {
         put("type", "checkout")
         put("text", text)
@@ -501,6 +524,35 @@ class ChatBridge(
         }
     }
 
+    /**
+     * Answers request [reqId] with the project files matching [query] (see [FileFinder]), as this chat would mention
+     * them. The search is a non-blocking read action on its own thread: a newer query from this page cancels it, and
+     * a write action pauses it. A search that fails answers with no files, so the page never waits on it.
+     */
+    private fun findFiles(reqId: Long, query: String) {
+        ReadAction.nonBlocking<List<Pair<String, String>>> {
+            FileFinder.find(project, query, MAX_FOUND_FILES).map { TetherTarget.pathFor(project, chat, it) to it.name }
+        }
+            .coalesceBy(this, FIND_FILES)
+            .expireWith(project)
+            .finishOnUiThread(ModalityState.any()) { found -> post(filesMessage(reqId, found)) }
+            .submit(FILE_SEARCH_EXECUTOR)
+            .onError { error -> if (error !is CancellationException) onEdt { post(filesMessage(reqId, emptyList())) } }
+    }
+
+    /** `{type:"files", reqId, items:[{mention, name, folder}]}` for [found] (path to name), in order. */
+    private fun filesMessage(reqId: Long, found: List<Pair<String, String>>) = buildJsonObject {
+        put("type", "files")
+        put("reqId", reqId)
+        putJsonArray("items") {
+            for ((path, name) in found) addJsonObject {
+                put("mention", Mention.format(path, null, null))
+                put("name", name)
+                put("folder", path.substringBeforeLast('/', ""))
+            }
+        }
+    }.toString()
+
     private fun resolvedMessage(reqId: Long, found: Map<String, ResolvedPath>) = buildJsonObject {
         put("type", "resolved")
         put("reqId", reqId)
@@ -515,6 +567,30 @@ class ChatBridge(
 
     internal companion object {
         const val BATCH_CHARS = 2_000_000
+
+        /** Longest unsent text kept; longer text keeps nothing, so what comes back is never a fragment or an older version. */
+        const val MAX_UNSENT_CHARS = 100_000
+
+        /** Most files offered for one `@` query. */
+        const val MAX_FOUND_FILES = 30
+
+        /** Longest `@` query searched for; a longer one is cut. */
+        const val MAX_FILE_QUERY = 200
+
+        /** Longest command description or hint sent to the page; the list shows one line of each. */
+        const val MAX_COMMAND_TEXT = 200
+
+        /** `{type:"commands", items:[{name, description, hint}]}`, each description on one line and capped. */
+        fun commandsMessage(commands: List<SlashCommand>): String = buildJsonObject {
+            put("type", "commands")
+            putJsonArray("items") {
+                for (command in commands) addJsonObject {
+                    put("name", command.name)
+                    put("description", ContextNotes.clean(command.description, MAX_COMMAND_TEXT))
+                    put("hint", ContextNotes.clean(command.hint, MAX_COMMAND_TEXT))
+                }
+            }
+        }.toString()
 
         /** Longest tool name shown in the strip. */
         const val MAX_TOOL_NAME = 40
@@ -603,6 +679,10 @@ class ChatBridge(
         private val IMAGE_EXECUTOR = AppExecutorUtil.createBoundedApplicationPoolExecutor("Tether images", 1)
         /** Local images one reply may ask for at a time. */
         private val PATH_EXECUTOR = AppExecutorUtil.createBoundedApplicationPoolExecutor("Tether paths", 1)
+        /** Runs `@` file searches, apart from [PATH_EXECUTOR] so a slow search never holds up link resolution. */
+        private val FILE_SEARCH_EXECUTOR = AppExecutorUtil.createBoundedApplicationPoolExecutor("Tether file search", 1)
+        /** Coalescing key: one page's newer file search cancels its older one. */
+        private val FIND_FILES = Any()
         const val MAX_IMAGE_PATHS = 20
         const val MAX_PATH_CANDIDATES = 200
 

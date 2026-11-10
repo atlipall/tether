@@ -31,11 +31,13 @@ class OpenChats(private val project: Project) : PersistentStateComponent<OpenCha
         var effort by string()
         var agentId by string(Agent.CLAUDE.id)
         var title by string()
+        var unsentText by string()
     }
 
     /**
      * A saved chat's provider and setup. An ACP chat's name is kept here because its transcript belongs to the agent,
-     * and so is its [agentMode], an id only that agent knows; a Claude chat's mode is in [setup].
+     * and so is its [agentMode], an id only that agent knows; a Claude chat's mode is in [setup]. [unsentText] is the
+     * text its message box held, not sent yet.
      */
     data class Saved(
         val sessionId: String,
@@ -44,6 +46,7 @@ class OpenChats(private val project: Project) : PersistentStateComponent<OpenCha
         val agentId: String = Agent.CLAUDE.id,
         val title: String? = null,
         val agentMode: String? = null,
+        val unsentText: String? = null,
     )
 
     class State : BaseState() {
@@ -69,8 +72,8 @@ class OpenChats(private val project: Project) : PersistentStateComponent<OpenCha
         val id = e.sessionId ?: return@mapNotNull null
         val cwd = e.cwd ?: return@mapNotNull null
         val agentId = e.agentId ?: Agent.CLAUDE.id
-        if (Agent.isNative(agentId)) Saved(id, cwd, SessionSetup(PermissionMode.fromCli(e.mode), e.model, e.effort), agentId, e.title)
-        else Saved(id, cwd, agentId = agentId, title = e.title, agentMode = e.mode)
+        if (Agent.isNative(agentId)) Saved(id, cwd, SessionSetup(PermissionMode.fromCli(e.mode), e.model, e.effort), agentId, e.title, unsentText = e.unsentText)
+        else Saved(id, cwd, agentId = agentId, title = e.title, agentMode = e.mode, unsentText = e.unsentText)
     }
 
     /** From now on the list follows the open chats. Call once the restored tabs are open. */
@@ -89,7 +92,7 @@ class OpenChats(private val project: Project) : PersistentStateComponent<OpenCha
         tracking = false
     }
 
-    /** Copies the open chats that have a session (a chat gets one with its first message) into the state. */
+    /** Copies the open chats that have a session (a chat gets one with its first message) into the state, unsent text included. */
     @Synchronized private fun remember() {
         if (!tracking || closing) return
         val open = project.serviceIfCreated<Chats>()?.all().orEmpty()
@@ -104,6 +107,7 @@ class OpenChats(private val project: Project) : PersistentStateComponent<OpenCha
                     effort = setup.effort
                     agentId = chat.agent.id
                     title = chat.customTitle.takeUnless { chat.agent.native }
+                    unsentText = chat.unsentText.takeIf { it.isNotBlank() }
                 }
             }
             .distinctBy { it.agentId to it.sessionId }

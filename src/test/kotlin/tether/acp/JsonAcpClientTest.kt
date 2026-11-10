@@ -123,6 +123,12 @@ class JsonAcpClientTest {
         assertEquals(List(7) { "update:s1" } + "done:end_turn", events)
     }
 
+    @Test fun availableCommandsArriveAsAnUpdate() {
+        connected()
+        update("""{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"web","description":"Search the web","input":{"hint":"query"}}]}""")
+        assertEquals(listOf(AcpUpdate.Commands(listOf(tether.cli.SlashCommand("web", "Search the web", "query")))), updates)
+    }
+
     @Test fun permissionIsAnsweredWithTheSelectedOptionOnce() {
         connected()
 

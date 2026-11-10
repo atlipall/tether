@@ -6,6 +6,7 @@ import tether.cli.bool
 import tether.cli.long
 import tether.cli.obj
 import tether.cli.parseJsonObject
+import tether.cli.SlashCommands
 import tether.cli.str
 import tether.image.Image
 import tether.session.Choice
@@ -208,6 +209,7 @@ class JsonAcpClient(
                 "agent_thought_chunk" -> AcpUpdate.Thought
                 "tool_call", "tool_call_update" -> tool(u)
                 "current_mode_update" -> u.str("currentModeId")?.let(AcpUpdate::Mode)
+                "available_commands_update" -> AcpUpdate.Commands(SlashCommands.fromAcp(u))
                 "usage_update" -> u.long("used")?.let { used -> u.long("size")?.let { AcpUpdate.Usage(used, it) } }
                 else -> null
             } ?: AcpUpdate.Other(kind)

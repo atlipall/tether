@@ -43,10 +43,26 @@
   let reqSeq = 0;
   /** Sent messages, oldest first: shared by every tab and kept by the IDE. */
   let history = [];
-  /** Index into [history] while recalling, -1 otherwise. */
+  /** The slash commands the agent offers, as `{ name, description, hint }`; empty until it reports them. */
+  let commands = [];
+  /**
+   * Index into [history] while a recalled message is shown untouched, -1 otherwise. Recall starts with Up in an empty
+   * box; typing, clicking in the box or any key but plain Up and Down ends it, and the arrows then move the caret
+   * until the box is empty again.
+   */
   let recall = -1;
-  /** What the box held before recall started. */
-  let draft = '';
+  /**
+   * The message just sent, while the box has stayed empty since: Escape brings it back. Null once the box changes, the
+   * chat is reset, or for a message that went into the queue (its row's Edit takes it back) or had no text.
+   */
+  let sentText = null;
+  /**
+   * The text Escape brought back, while the box still holds it untouched: another Escape asks to revert to before that
+   * message. Null once the box is edited.
+   */
+  let takenBack = null;
+  /** The text a requested revert will put back in the box, which already holds it; that copy is not added again. */
+  let rewinding = null;
   /** The predicted next prompt shown in the empty box; Tab takes it. */
   let suggestion = '';
   /** The last state was IDLE: a suggestion that lands later than a new turn's state is stale. */
@@ -156,6 +172,7 @@
       switch (msg.type) {
         case 'reset':
           items.clear(); childBoxes.clear(); waitingFor.clear(); waitingOn.clear(); parentOf.clear(); reports.clear();
+          sentText = takenBack = null;
           stubs.clear(); dismissed.clear(); stopping.clear();
           logContent.textContent = '';
           tasksEl.querySelectorAll(':scope > .agent').forEach((el) => el.remove());
@@ -173,9 +190,12 @@
         case 'activity': setActivity(msg); break;
         case 'resolved': answer(msg.reqId, msg.paths); break;
         case 'images': answer(msg.reqId, msg.images || {}); break;
+        case 'files': answer(msg.reqId, Array.isArray(msg.items) ? msg.items : []); break;
         case 'insert': insertText(msg.text); break;
+        case 'unsentText': restoreUnsentText(msg.text); break;
         case 'theme': applyTheme(msg); break;
         case 'history': history = Array.isArray(msg.entries) ? msg.entries : []; break;
+        case 'commands': setCommands(Array.isArray(msg.items) ? msg.items : []); break;
         case 'checkout': setCheckout(msg.text); break;
         case 'usage': setUsage(msg); break;
         case 'model': setModel(msg); break;
@@ -333,6 +353,7 @@
    */
   function renderUser(el, item) {
     el.className = 'msg user';
+    el.dataset.text = typeof item.text === 'string' ? item.text.trim() : '';
     if (item.revertable) {
       el.append(h('button', { class: 'link revert', 'data-action': 'revertTo', 'data-id': item.id,
         title: 'Go back to before this message: files, conversation or both (asks first)' }, 'Revert to here'));
@@ -1149,9 +1170,9 @@
     agentPicker.button.disabled = !!msg.locked || agents.length < 2;
     setChoices(agentPicker, agents, agent);
     agentPicker.button.title = msg.locked ? 'This chat runs ' + agentName + '. Start a new chat for another agent.' : 'Agent for this chat';
-    if (changed) { mode = ''; setModes([]); clearModel(); }
-    placeholder = 'Message ' + agentName + ' (Enter to send, Shift+Enter for a new line)';
-    activityStop.title = 'Stop ' + agentName;
+    if (changed) { mode = ''; setModes([]); clearModel(); setCommands([]); }
+    placeholder = 'Message ' + agentName;
+    activityStop.title = 'Stop ' + agentName + ' (Esc)';
     setSuggestion(changed ? '' : suggestion);
   }
 
@@ -1224,11 +1245,36 @@
   let resizeFrame = 0;
   window.addEventListener('resize', () => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(fitInput); });
 
-  /** Every programmatic change of the box's text goes through here, so its height follows. */
+  /** How long the box must be still before its text is reported, in milliseconds. */
+  const UNSENT_DELAY_MS = 400;
+  let unsentTimer = 0;
+
+  /** Every programmatic change of the box's text goes through here, so its height follows and the host hears of it. */
   function setInput(text, caret = text.length) {
+    sentText = takenBack = rewinding = null;
     input.value = text;
     input.setSelectionRange(caret, caret);
     fitInput();
+    saveUnsentTextSoon();
+  }
+
+  /** Reports the box's text to the host, which gives it back after a reload or restart. */
+  function saveUnsentText() {
+    clearTimeout(unsentTimer);
+    send({ type: 'unsentText', text: input.value });
+  }
+
+  /** Reports the box's text once typing pauses, so a burst of keys sends one message. */
+  function saveUnsentTextSoon() {
+    clearTimeout(unsentTimer);
+    unsentTimer = setTimeout(saveUnsentText, UNSENT_DELAY_MS);
+  }
+
+  /** Puts text the host kept back in the box, unless the user has already started typing in this page. */
+  function restoreUnsentText(text) {
+    if (typeof text !== 'string' || input.value) return;
+    setSuggestion('');
+    setInput(text);
   }
 
   let placeholder = input.placeholder;
@@ -1471,6 +1517,9 @@
   }
 
   function insertText(text) {
+    const alreadyThere = rewinding !== null && text.trim() === rewinding.trim() && input.value === rewinding;
+    rewinding = null;
+    if (alreadyThere) return;
     recall = -1;
     const start = input.selectionStart, end = input.selectionEnd;
     const before = input.value.slice(0, start), after = input.value.slice(end);
@@ -1498,6 +1547,70 @@
     fitInput();
   }
 
+  /**
+   * Empties the box after a send as an edit, not by setting its value, so Undo straight afterwards brings the text
+   * back to fix and send again. The images went with the message and don't come back.
+   */
+  function clearSentText(queued) {
+    const text = input.value;
+    input.focus();
+    input.select();
+    document.execCommand('delete');
+    if (input.value) setInput('');
+    sentText = queued || !text.trim() ? null : text;
+  }
+
+  /**
+   * Escape in the box, outside a completion list: a second Escape on the brought-back text asks to revert to before
+   * that message, once the turn has stopped and if the message can be reverted; in an empty box right after a send it
+   * stops the turn and brings the text back, as Undo does; in any other empty box it stops a working turn. False when
+   * it does none of these.
+   */
+  function onEscape() {
+    if (takenBack !== null && input.value === takenBack) return askToRevert();
+    if (input.value) return false;
+    if (sentText !== null) return takeBack();
+    if (!stoppable()) return false;
+    send({ type: 'interrupt' });
+    return true;
+  }
+
+  /**
+   * Puts the sent text back in the box, as one undoable edit, and stops what it started: the turn, even one waiting
+   * for the user's answer, or the send itself while it still waits for its notes.
+   */
+  function takeBack() {
+    send({ type: 'interrupt' });
+    const text = sentText;
+    input.focus();
+    document.execCommand('insertText', false, text);
+    completion.close();
+    sentText = null;
+    takenBack = text;
+    return true;
+  }
+
+  /** The "Revert to here" link of the message [text] became, if it is the newest one in the chat and offers one. */
+  function revertLinkFor(text) {
+    const newest = [...logContent.querySelectorAll(':scope > .msg.user')].pop();
+    if (!newest || newest.dataset.text !== text.trim()) return null;
+    return newest.querySelector('button.revert');
+  }
+
+  /**
+   * Opens "Revert to here" for the brought-back message through its own link; the dialog asks what to revert, so
+   * nothing changes without the user's choice. Waits while a turn is still stopping (Escape can ask again), and does
+   * nothing for a message that can't be reverted.
+   */
+  function askToRevert() {
+    if (activityPhase !== null) return true;
+    const link = revertLinkFor(takenBack);
+    if (!link) return false;
+    rewinding = takenBack;
+    link.click();
+    return true;
+  }
+
   /** Sends the box's text with the attachments in the tray, once every image is ready. */
   function submit() {
     const text = input.value.trim();
@@ -1506,64 +1619,135 @@
     if (tiles.some(([, p]) => !p.ready)) return;
     const attachments = tiles.map(([id]) => id);
     if (!text && !attachments.length) return;
+    const queued = activityPhase !== null;
     send({ type: 'send', text, attachments });
     attachments.forEach(removeTile);
-    setInput('');
+    clearSentText(queued);
     recall = -1;
-    draft = '';
     setSuggestion('');
   }
 
-  const caretOnFirstLine = () => !input.value.slice(0, input.selectionStart).includes('\n');
-  const caretOnLastLine = () => !input.value.slice(input.selectionEnd).includes('\n');
+  /** Whether Up steps back through sent messages: from an empty box, or on from a recalled one. */
+  const canRecallBack = () => recall !== -1 || !input.value;
+
+  /** Keys that leave recall going: plain Up and Down step it, and a modifier pressed on its own is not a choice yet. */
+  const RECALL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'Shift', 'Control', 'Alt', 'Meta']);
+  const hasModifier = (e) => e.shiftKey || e.altKey || e.ctrlKey || e.metaKey;
+
+  /** Whether [e] ends recall, leaving the shown message to edit: any key but plain Up and Down, or a lone modifier. */
+  const endsRecall = (e) => recall !== -1 && (!RECALL_KEYS.has(e.key) || (e.key.startsWith('Arrow') && hasModifier(e)));
 
   /**
-   * Pure recall state machine. s = { recall, draft }; dir = 'up' | 'down'.
-   * Returns { recall, draft, text } where text is the new box content, or null when the key is not handled.
+   * Where recall goes from [current] (-1 for not recalling) in [dir], 'up' or 'down', through [count] sent messages:
+   * Up starts at the newest and stops at the oldest, Down past the newest ends recall. Null when the key does nothing.
    */
-  function recallStep(s, dir, entries, value) {
+  function recallStep(current, dir, count) {
     if (dir === 'up') {
-      let r = s.recall, d = s.draft;
-      if (r === -1) {
-        if (!entries.length) return null;
-        d = value;
-        r = entries.length;
-      }
-      r = Math.min(r, entries.length);
-      if (r > 0) r--;
-      return { recall: r, draft: d, text: entries[r] };
+      if (!count) return null;
+      const from = current === -1 ? count : current;
+      return Math.max(from - 1, 0);
     }
-    if (s.recall === -1) return null;
-    const r = s.recall + 1;
-    if (r >= entries.length) return { recall: -1, draft: s.draft, text: s.draft };
-    return { recall: r, draft: s.draft, text: entries[r] };
+    if (current === -1) return null;
+    return current + 1 < count ? current + 1 : -1;
   }
 
-  /** Steps recall in [dir] and puts the entry in the box as its value, never parsed as HTML; false when not handled. */
+  /**
+   * Steps recall in [dir] and shows the message as the box's value, never parsed as HTML; past the newest the box is
+   * empty again, as recall started from an empty box. False when the key does nothing.
+   */
   function recallKey(dir) {
-    const step = recallStep({ recall, draft }, dir, history, input.value);
-    if (!step) return false;
-    recall = step.recall;
-    draft = step.draft;
-    setInput(step.text);
+    const next = recallStep(recall, dir, history.length);
+    if (next === null) return false;
+    recall = next;
+    setInput(next === -1 ? '' : history[next]);
     return true;
   }
 
   input.addEventListener('keydown', (e) => {
-    if (e.isComposing || e.keyCode === 229) return;
+    if (window.TextKeys.isComposing(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); return; }
-    if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (endsRecall(e)) recall = -1;
+    if (hasModifier(e)) return;
+    if (e.key === 'Escape') { if (onEscape()) e.preventDefault(); return; }
     if (e.key === 'Tab' && suggestion && !input.value) { e.preventDefault(); acceptSuggestion(); return; }
-    if (e.key === 'ArrowUp' && caretOnFirstLine() && recallKey('up')) e.preventDefault();
-    else if (e.key === 'ArrowDown' && caretOnLastLine() && recallKey('down')) e.preventDefault();
+    if (e.key === 'ArrowUp' && canRecallBack() && recallKey('up')) e.preventDefault();
+    else if (e.key === 'ArrowDown' && recall !== -1 && recallKey('down')) e.preventDefault();
   });
-  /** Typing ends recall (the edited text becomes the new draft) and dismisses the suggestion. */
+  input.addEventListener('pointerdown', () => { recall = -1; });
+  /** Takes the agent's commands, and mentions `/` in the box's hint only while there are some to offer. */
+  function setCommands(items) {
+    commands = items;
+    document.getElementById('hint-commands').hidden = !commands.length;
+  }
+
+  /**
+   * Whether Escape in an empty box stops the turn: it is working, not waiting for the user's answer. Right after a
+   * send, Escape stops it whatever it is doing, as it takes the message back (see [takeBack]).
+   */
+  const stoppable = () => activityPhase !== null && activityPhase !== 'waiting';
+
+  /** Completes `/name` at the very start of the box from the agent's commands; accepting leaves room for arguments. */
+  const commandCompletion = {
+    label: 'Commands',
+    empty: 'No matching commands',
+    match: (before) => {
+      const typed = /^\/(\S*)$/.exec(before);
+      return typed && commands.length ? { start: 0, query: typed[1] } : null;
+    },
+    items: (query, show) => show(window.Completion.rank(commands, query, (c) => c.name)),
+    row: (c) => ({ label: '/' + c.name + (c.hint ? ' ' + c.hint : ''), detail: c.description }),
+    text: (c) => '/' + c.name + ' ',
+  };
+
+  /** How long typing must pause before the IDE is asked for files, in milliseconds. */
+  const FILE_QUERY_DELAY_MS = 100;
+  let fileQueryTimer = 0;
+  /** The file search the list waits on; an older one the IDE dropped for a newer query never answers. */
+  let fileRequest = 0;
+
+  /** Stops waiting for the file search in flight, and for one about to be sent. */
+  function cancelFileQuery() {
+    clearTimeout(fileQueryTimer);
+    pendingResolve.delete(fileRequest);
+  }
+
+  /**
+   * Completes an `@` mention, at the start or after a space, from the project's files as the IDE finds them; an empty
+   * query offers the open files. Accepting inserts the mention the IDE builds, as its "Add to Tether" action does.
+   */
+  const fileCompletion = {
+    label: 'Files',
+    empty: 'No matching files',
+    match: (before) => {
+      const typed = /(^|\s)@([^\s@]*)$/.exec(before);
+      return typed ? { start: typed.index + typed[1].length, query: typed[2] } : null;
+    },
+    items: (query, show) => {
+      cancelFileQuery();
+      fileQueryTimer = setTimeout(() => {
+        fileRequest = expectReply(show);
+        send({ type: 'findFiles', reqId: fileRequest, query });
+      }, FILE_QUERY_DELAY_MS);
+    },
+    cancel: cancelFileQuery,
+    row: (f) => ({ label: f.name, detail: f.folder }),
+    text: (f) => f.mention + ' ',
+  };
+
+  /** Typing ends recall and Escape's take-back, dismisses the suggestion and reports the text to the host. */
   function onTyped() {
     recall = -1;
+    sentText = takenBack = rewinding = null;
     if (suggestion) setSuggestion('');
     fitInput();
+    saveUnsentTextSoon();
   }
   input.addEventListener('input', onTyped);
+  input.addEventListener('blur', saveUnsentText);
+  window.addEventListener('pagehide', saveUnsentText);
+  window.TextKeys.install(input);
+  const completion = window.Completion.install(input, document.getElementById('completion'),
+    document.getElementById('completion-status'), [commandCompletion, fileCompletion]);
   fitInput();
   sendBtn.addEventListener('click', submit);
   activityStop.addEventListener('click', () => send({ type: 'interrupt' }));

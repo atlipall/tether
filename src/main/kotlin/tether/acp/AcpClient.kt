@@ -1,5 +1,6 @@
 package tether.acp
 
+import tether.cli.SlashCommand
 import tether.image.Image
 import tether.session.Choice
 import kotlinx.serialization.json.JsonObject
@@ -50,6 +51,8 @@ sealed interface AcpUpdate {
     ) : AcpUpdate
     data class Mode(val id: String) : AcpUpdate
     data class Usage(val used: Long, val size: Long) : AcpUpdate
+    /** The commands the agent now offers, replacing any it offered before. */
+    data class Commands(val commands: List<SlashCommand>) : AcpUpdate
     data class Other(val kind: String) : AcpUpdate
 }
 

@@ -23,6 +23,9 @@ object Fx {
     fun initResponseWithModels(requestId: String, models: String = MODELS) =
         """{"type":"control_response","response":{"subtype":"success","request_id":"$requestId","response":{"commands":[],"models":$models,"current_permission_mode":"default","session_state":"idle","claude_code_version":"2.1.317"}}}"""
 
+    fun initResponseWithCommands(requestId: String, commands: String) =
+        """{"type":"control_response","response":{"subtype":"success","request_id":"$requestId","response":{"commands":$commands,"current_permission_mode":"default","session_state":"idle","claude_code_version":"2.1.317"}}}"""
+
     /** A get_settings reply, trimmed from claude 2.1.317 to what Tether reads (and a little around it). */
     fun settingsResponse(requestId: String, model: String = "claude-opus-5-5", effort: String? = "high") =
         """{"type":"control_response","response":{"subtype":"success","request_id":"$requestId","response":{"effective":{"effortLevel":"xhigh"},"sources":[],"applied":{"model":${q(model)},"effort":${effort?.let(::q) ?: "null"},"advisor":null,"ultracode":false}}}}"""

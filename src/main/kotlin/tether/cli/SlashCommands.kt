@@ -9,6 +9,14 @@ import kotlinx.serialization.json.JsonObject
 data class SlashCommand(val name: String, val description: String, val hint: String)
 
 object SlashCommands {
+    private val INVOCATION = Regex("^/[A-Za-z][\\w:.-]*(\\s|$)")
+
+    /**
+     * Whether [text] runs a command: the agent only reads `/name` at the very start of a message, so nothing may be put
+     * before it. A message opening with a path such as `/Users/me/log.txt` is not one.
+     */
+    fun isInvocation(text: String): Boolean = INVOCATION.containsMatchIn(text)
+
     /** The commands in claude's initialize reply, in its order; empty when it lists none. */
     fun fromInitialize(initResponse: JsonObject): List<SlashCommand> =
         initResponse.arr("commands").orEmpty().filterIsInstance<JsonObject>().mapNotNull { c ->

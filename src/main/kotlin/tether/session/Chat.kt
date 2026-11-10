@@ -6,6 +6,7 @@ import tether.cli.ModelChoice
 import tether.cli.PermissionMode
 import tether.cli.SessionLaunch
 import tether.cli.SlashCommand
+import tether.cli.SlashCommands
 import tether.context.ContextNotes
 import tether.context.EditorContext
 import tether.git.PullRequest
@@ -551,11 +552,18 @@ class Chat(
     /** This chat's images on disk, for opening in the editor: attachments are written as they are prepared. Deleted when the chat is disposed. */
     val imageFiles = ImageFiles()
 
-    private class Outgoing(val text: String, val edits: String?, val images: List<Attachment>) {
+    /** A message on its way out. [bare] goes out without any note, as a slash command must start the message. */
+    private class Outgoing(val text: String, val edits: String?, val images: List<Attachment>, val bare: Boolean) {
         /** Whether [git] was looked up; the git note comes before the editor context. */
         var gitResolved = false
         var git: String? = null
     }
+
+    /**
+     * The git note a slash command took but could not carry, for the next message that can. It is still taken, since the
+     * command's turn ending makes git's state then the known one. EDT only.
+     */
+    private var heldGitNote: String? = null
 
     /** Messages waiting for their git note and editor context, oldest first; only the head resolves, so order is kept. EDT only. */
     private val outbox = ArrayDeque<Outgoing>()
@@ -568,6 +576,8 @@ class Chat(
      * Claude gets the edit note, then the git note, then the editor-context note, then [text], then the [images]; the
      * chat shows [text] under the images' thumbnails. Image bytes are dropped once the line is written to the CLI;
      * each image's [Attachment.file] stays for opening it in the editor.
+     * A slash command ([SlashCommands.isInvocation]) gets no notes, since anything before it would turn it into an
+     * ordinary prompt; its edit and git notes go with the next message instead, which gets its own editor context.
      * The edit note is taken now. The git note is read in the background, and when the symbol at the caret is not cached
      * it is looked up there too: the message goes out (and its bubble appears) once both are back, behind any earlier
      * message still waiting.
@@ -579,8 +589,9 @@ class Chat(
             start()
             if (session.state == SessionState.DEAD) return insert(text)
         }
-        val edits = editNote(this)
-        outbox += Outgoing(text, edits, images)
+        val bare = SlashCommands.isInvocation(text)
+        val edits = if (bare) null else editNote(this)
+        outbox += Outgoing(text, edits, images, bare)
         pump()
     }
 
@@ -604,6 +615,12 @@ class Chat(
                 }
                 if (notes == null) next.gitResolved = true
                 if (!resolved) return
+                continue
+            }
+            if (next.bare) {
+                outbox.removeFirst()
+                heldGitNote = joinNotes(heldGitNote, next.git)
+                deliver(next, null)
                 continue
             }
             val resolve = resolveContext
@@ -665,16 +682,20 @@ class Chat(
         null
     }
 
+    /** Sends [message] with its notes and [context] before it, or with none when it is [Outgoing.bare]. */
     private fun deliver(message: Outgoing, context: String?) {
         if (disposed || session.state == SessionState.DEAD) return
+        val prefix = if (message.bare) null else joinNotes(message.edits, heldGitNote, message.git, context).also { heldGitNote = null }
         session.send(
             message.text,
-            listOfNotNull(message.edits, message.git, context).joinToString("\n\n").ifEmpty { null },
+            prefix,
             message.images.map { it.image },
             message.images.map { it.thumb },
             message.images.map { it.file },
         )
     }
+
+    private fun joinNotes(vararg notes: String?): String? = notes.filterNotNull().joinToString("\n\n").ifEmpty { null }
 
     /** Puts queued message [id] back into the message box instead of sending it. */
     fun editQueued(id: String) {

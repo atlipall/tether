@@ -770,6 +770,25 @@ class ChatsTest : BasePlatformTestCase() {
         }
     }
 
+    fun testASlashCommandGoesOutWithoutNotesAndLeavesThemForTheNextMessage() {
+        myFixture.configureByText("a.txt", "x")
+        val notes = ArrayDeque(listOf("[IDE] edit note"))
+        val connection = FakeConnection()
+        val chat = Chat(
+            id = 99, spec = ChatSpec.inProject(root), history = emptyList(), connector = { connection },
+            editNote = { notes.removeFirstOrNull() },
+        )
+        try {
+            chat.start()
+            chat.send("/usage")
+            connection.emit(Fx.result())
+            chat.send("/Users/me/log.txt is empty")
+            assertEquals(listOf("/usage", "[IDE] edit note\n\n/Users/me/log.txt is empty"), connection.userMessages())
+        } finally {
+            chat.dispose()
+        }
+    }
+
     /** A real git repository with one commit, for the git-note tests; null (test skipped) without git. */
     private fun gitRepo(): File? {
         if (!gitAvailable()) return null
@@ -791,6 +810,23 @@ class ChatsTest : BasePlatformTestCase() {
         val message = connections.single().userMessages().single()
         assertTrue(message, message.startsWith("[IDE] Since your last turn, git changed in this checkout"))
         assertTrue(message, message.contains("1 new commit on `main`"))
+        assertTrue(message, message.contains("“by hand”"))
+        assertTrue(message, message.endsWith("\n\nhi"))
+    }
+
+    fun testAGitNoteTakenBySlashCommandGoesWithTheNextMessage() {
+        val repo = gitRepo() ?: return
+        val chat = chats.open(ChatSpec.inProject(repo.path))
+        gitTracker.drain()
+        git(repo, "commit", "-q", "--allow-empty", "-m", "by hand")
+        chat.send("/usage")
+        awaitMessages(connections.single(), 1)
+        connections.single().emit(Fx.result())
+        gitTracker.drain()
+        chat.send("hi")
+        awaitMessages(connections.single(), 2)
+        val (command, message) = connections.single().userMessages()
+        assertEquals("/usage", command)
         assertTrue(message, message.contains("“by hand”"))
         assertTrue(message, message.endsWith("\n\nhi"))
     }

@@ -106,6 +106,7 @@ window.runTasksTests = function () {
     assert(!head().hidden && card('a1').hidden, 'Only the folded agent box must stay');
   });
 
+  receive({ type: 'processes', processes: [{ id: 'b2', kind: 'Bash', description: 'npm test', startedAt: Date.now() }] });
   receive({ type: 'items', items: [{ id: 'u3', kind: 'user', text: 'check again' }, agentCall('a3', 'running')] });
 
   test('a message that starts an agent opens the box with the earlier agents', () => {
@@ -113,6 +114,15 @@ window.runTasksTests = function () {
     assert(!card('a1').hidden && !card('a2').hidden && !card('a3').hidden, 'A short list shows every agent');
     assert(head().querySelector('.tool-desc').textContent === '1 running \u00b7 2 done', 'The header must count by state');
   });
+
+  test('background processes come after the agents, also those that start later', () => {
+    const rows = [...tasks().children];
+    const process = rows.indexOf(tasks().querySelector('.process'));
+    assert(rows.indexOf(head()) < process && rows.indexOf(card('a1')) < process, 'The agent box must come before the process');
+    assert(rows.indexOf(card('a3')) < process, 'An agent that starts after the process must still go above it');
+  });
+
+  receive({ type: 'processes', processes: [] });
 
   receive({ type: 'item', item: { id: 'u4', kind: 'user', text: 'meanwhile' } });
 

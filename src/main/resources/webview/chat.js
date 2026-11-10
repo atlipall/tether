@@ -282,8 +282,8 @@
   }
 
   /**
-   * Puts [el] in its card's container ([logContent] without a parent, or [tasksEl] for a [pinned] card), or has it wait
-   * until the card is shown.
+   * Puts [el] in its card's container ([logContent] without a parent, or [tasksEl] for a [pinned] card, ahead of the
+   * background processes listed below the agents), or has it wait until the card is shown.
    */
   function place(el, parentId, pinned) {
     const waited = waitingOn.get(el);
@@ -301,7 +301,7 @@
       }
       return;
     }
-    if (el.parentNode !== box) box.appendChild(el);
+    if (el.parentNode !== box) box.insertBefore(el, box === tasksEl ? tasksEl.querySelector(':scope > .process') : null);
   }
 
   /** The <details> of [el] itself: a card's own are only its Prompt; those in its container belong to the items there. */
@@ -1036,7 +1036,7 @@
   }
 
   /**
-   * The background processes (shell commands, monitors, workflows) as rows above the subagents, each with its running
+   * The background processes (shell commands, monitors, workflows) as rows below the agent box, each with its running
    * time and a Stop. The IDE sends the whole list on every change. Its text is plain, never markup.
    */
   function setProcesses(list) {
@@ -1055,7 +1055,7 @@
           h('span', { class: 'tool-desc', title: desc || null }, desc),
           h('span', { class: 'tool-side' }, h('span', { class: 'process-time', 'data-started': String(started) }), ' ', stopButton(p.id, 'this process'))));
     });
-    tasksEl.prepend(...rows);
+    tasksEl.append(...rows);
     tickProcesses();
     if (rows.length && processTimer === null) processTimer = setInterval(tickProcesses, 1000);
     if (!rows.length && processTimer !== null) { clearInterval(processTimer); processTimer = null; }

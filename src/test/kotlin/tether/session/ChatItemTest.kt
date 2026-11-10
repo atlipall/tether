@@ -42,6 +42,10 @@ class ChatItemTest {
         """{"id":"a1","kind":"assistant","text":"x","streaming":false,"parentId":"t1"}""",
         ChatItem.AssistantText("a1", "x", false, "t1").toJson().toString())
 
+    @Test fun commandOutputIsFlagged() = assertEquals(
+        """{"id":"a1","kind":"assistant","text":"x","streaming":false,"commandOutput":true}""",
+        ChatItem.AssistantText("a1", "x", false, commandOutput = true).toJson().toString())
+
     @Test fun agentCall() = assertEquals(
         """{"id":"t1","kind":"tool","name":"Agent","input":{},"filePath":null,"status":"done","permissionRequestId":null,"resultPreview":null,"hasDiff":false,""" +
             """"agent":{"subagentType":"general-purpose","background":true,"prompt":"p","state":"running","toolUses":2,"durationMs":900,"lastTool":"Bash","report":null,"taskId":"a1"}}""",

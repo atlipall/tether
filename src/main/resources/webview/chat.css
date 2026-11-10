@@ -101,6 +101,7 @@ button.link { background: none; border: none; color: var(--accent); padding: 2px
 pre.diff { display: grid; grid-template-columns: minmax(100%, max-content); white-space: pre; overflow: auto; max-height: 40vh; margin: 2px 0 4px; padding: 4px 0; background: var(--bg); }
 pre.diff > span { padding: 0 8px; }
 .msg.assistant p { margin: .4em 0; }
+.msg.command-output { white-space: pre-wrap; margin: .4em 0; }
 pre { background: var(--code-bg); padding: 6px 8px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; margin: 4px 0; font-family: ui-monospace, Menlo, monospace; font-size: .92em; line-height: 1.4; }
 .tool.status-awaiting_permission details > pre { max-height: 40vh; overflow-y: auto; }
 code { font-family: ui-monospace, Menlo, monospace; font-size: .95em; }

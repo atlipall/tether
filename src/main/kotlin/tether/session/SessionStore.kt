@@ -85,6 +85,7 @@ class SessionStore(private val claudeHome: File) {
                         if (obj.bool("isSidechain") != true) obj.str("uuid")?.let { lastAssistant = it }
                     }
                     CUSTOM_TITLE -> title.add(obj)
+                    "system" -> localCommandItem(obj, "h-${items.size}")?.let { items += it }
                 }
             }
         }
@@ -94,12 +95,12 @@ class SessionStore(private val claudeHome: File) {
     }
 
     /**
-     * False for lines [read] has no use for, without parsing them: only user, assistant and title lines matter, and a user
-     * line of tool results alone shows nothing. JSON escapes quotes inside strings, so these patterns only match the
+     * False for lines [read] has no use for, without parsing them: only user, assistant, title and local command lines
+     * matter, and a user line of tool results alone shows nothing. JSON escapes quotes inside strings, so these patterns only match the
      * line's own structure; a line that matches by chance is merely parsed.
      */
     private fun mayShow(line: String): Boolean = when {
-        line.contains(TITLE_TYPE) || line.contains(ASSISTANT_TYPE) -> true
+        line.contains(TITLE_TYPE) || line.contains(ASSISTANT_TYPE) || line.contains(LOCAL_COMMAND_SUBTYPE) -> true
         !line.contains(USER_TYPE) -> false
         else -> !line.contains(TOOL_RESULT_TYPE) || line.contains(TEXT_TYPE) || line.contains(IMAGE_TYPE)
     }
@@ -209,6 +210,34 @@ class SessionStore(private val claudeHome: File) {
         else -> null
     }?.takeIf { it.isNotBlank() }
 
+    /**
+     * A local command such as `/usage` from its `system` line: the line naming the command becomes the message the user
+     * typed, and the line holding its output a [ChatItem.AssistantText] marked as command output. Claude writes no user
+     * line for such a command. Null for any other system line, and for a command that printed nothing.
+     */
+    private fun localCommandItem(obj: JsonObject, id: String): ChatItem? {
+        if (obj.str("subtype") != LOCAL_COMMAND || obj.bool("isSidechain") == true) return null
+        val content = obj.str("content")?.trim().orEmpty()
+        LOCAL_COMMAND_OUTPUT.find(content)?.let { output ->
+            val text = output.groupValues[2].trimEnd().takeIf { it.isNotBlank() } ?: return null
+            return ChatItem.AssistantText(id, text, false, commandOutput = true)
+        }
+        return typedCommand(content)?.let { ChatItem.UserText(id, it) }
+    }
+
+    /** The command as typed: `/name args` from a `<command-name>` line, or the line itself when it is already that. */
+    private fun typedCommand(content: String): String? {
+        val name = tagged(content, "command-name") ?: return content.takeIf { it.startsWith("/") }
+        val args = tagged(content, "command-args").orEmpty()
+        return if (args.isEmpty()) name else "$name $args"
+    }
+
+    /** The trimmed text between `<tag>` and `</tag>` in [content]; null when it has no such tag. */
+    private fun tagged(content: String, tag: String): String? {
+        val start = content.indexOf("<$tag>").takeIf { it >= 0 } ?: return null
+        return content.substring(start + tag.length + 2).substringBefore("</$tag>").trim()
+    }
+
     /** Drops every leading "[IDE] " note (a message can carry an edit note and a context note); null when only notes remain. */
     private fun stripIdeNote(text: String): String? {
         var rest = text
@@ -221,6 +250,11 @@ class SessionStore(private val claudeHome: File) {
         private val NON_ALNUM = Regex("[^A-Za-z0-9]")
         const val IMAGE_MARK = "[image]"
         private const val CUSTOM_TITLE = "custom-title"
+        private const val LOCAL_COMMAND = "local_command"
+        /** How a local command's system line spells its subtype. */
+        private const val LOCAL_COMMAND_SUBTYPE = "\"subtype\":\"$LOCAL_COMMAND\""
+        /** A local command's output, which claude wraps in a stdout or stderr tag. */
+        private val LOCAL_COMMAND_OUTPUT = Regex("^<local-command-(stdout|stderr)>(.*)</local-command-\\1>$", RegexOption.DOT_MATCHES_ALL)
         /** How a title line spells its type: cheaper to find than parsing every line, and rarer than the bare word. */
         private const val TITLE_TYPE = "\"$CUSTOM_TITLE\""
         /** How a user line spells its type. Claude writes compact JSON, so this and the types below match without spaces. */

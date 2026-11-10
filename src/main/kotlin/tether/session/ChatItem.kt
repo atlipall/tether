@@ -49,7 +49,8 @@ sealed interface ChatItem {
      * the IDE marked the files' state when this message went out, so they can be reverted to it.
      */
     data class UserText(override val id: String, val text: String, val images: List<String> = emptyList(), val revertable: Boolean = false) : ChatItem
-    data class AssistantText(override val id: String, val text: String, val streaming: Boolean, val parentId: String? = null) : ChatItem
+    /** [commandOutput]: a local command's plain-text output (see [tether.cli.CliEvent.AssistantText]), shown as written. */
+    data class AssistantText(override val id: String, val text: String, val streaming: Boolean, val parentId: String? = null, val commandOutput: Boolean = false) : ChatItem
     data class ToolCall(
         override val id: String,
         val name: String,
@@ -91,6 +92,7 @@ fun ChatItem.toJson(): JsonObject = buildJsonObject {
             put("text", item.text)
             put("streaming", item.streaming)
             item.parentId?.let { put("parentId", it) }
+            if (item.commandOutput) put("commandOutput", true)
         }
         is ChatItem.ToolCall -> {
             put("kind", "tool")

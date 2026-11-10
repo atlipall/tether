@@ -39,8 +39,12 @@ sealed interface CliEvent {
     /** A thinking content block began (its text is never shown). */
     data class ThinkingStart(val messageId: String, val index: Int) : CliEvent
     data class BlockStop(val messageId: String, val index: Int) : CliEvent
-    /** [parentId]: the Agent call whose subagent sent this; null for the main conversation (also below). */
-    data class AssistantText(val messageId: String, val text: String, val parentId: String? = null) : CliEvent
+    /**
+     * [parentId]: the Agent call whose subagent sent this; null for the main conversation (also below).
+     * [commandOutput]: the CLI wrote this text itself as a local command's output (such as `/usage`), so it is plain
+     * text laid out with line breaks and spaces rather than markdown.
+     */
+    data class AssistantText(val messageId: String, val text: String, val parentId: String? = null, val commandOutput: Boolean = false) : CliEvent
     /** A main-conversation assistant message was recorded under [uuid]; a rewind can resume the session at it. */
     data class AssistantMessage(val uuid: String) : CliEvent
     data class ToolUse(val toolUseId: String, val name: String, val input: JsonObject, val parentId: String? = null) : CliEvent
@@ -150,10 +154,11 @@ object CliParser {
         val message = obj.obj("message") ?: return emptyList()
         val messageId = message.str("id") ?: ""
         val parent = obj.str("parent_tool_use_id")
+        val commandOutput = obj.containsKey("local_command_source")
         val blocks = message.arr("content").orEmpty().mapNotNull { block ->
             val b = block as? JsonObject ?: return@mapNotNull null
             when (b.str("type")) {
-                "text" -> CliEvent.AssistantText(messageId, b.str("text") ?: "", parent)
+                "text" -> CliEvent.AssistantText(messageId, b.str("text") ?: "", parent, commandOutput)
                 "tool_use" -> CliEvent.ToolUse(b.str("id") ?: "", b.str("name") ?: "", b.obj("input") ?: EMPTY, parent)
                 else -> null
             }

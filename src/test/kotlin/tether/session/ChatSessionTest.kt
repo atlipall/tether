@@ -477,6 +477,13 @@ class ChatSessionTest {
         assertFalse(texts.single().streaming)
     }
 
+    @Test fun aLocalCommandsOutputIsShownAsCommandOutput() {
+        val s = session()
+        s.send("/usage")
+        conn.emit(Fx.commandOutput("m2", "usage"))
+        assertTrue(listener.latest<ChatItem.AssistantText>().commandOutput)
+    }
+
     @Test fun assistantTextWithoutStreamingCreatesItem() {
         val s = session()
         s.send("hi")

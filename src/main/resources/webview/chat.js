@@ -499,9 +499,11 @@
     if (!streaming) { linkify(el); resolveImages(images); }
   }
 
+  /** An assistant message as markdown, or a local command's output (such as /usage) as the plain text it is. */
   function renderAssistant(el, item) {
-    el.className = 'msg assistant';
-    renderMarkdown(el, item.text, item.streaming);
+    el.className = 'msg assistant' + (item.commandOutput ? ' command-output' : '');
+    if (item.commandOutput) el.textContent = item.text;
+    else renderMarkdown(el, item.text, item.streaming);
     el.toggleAttribute('aria-busy', !!item.streaming);
   }
 

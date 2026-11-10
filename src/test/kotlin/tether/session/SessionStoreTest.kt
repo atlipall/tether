@@ -32,6 +32,8 @@ class SessionStoreTest {
     }
     private fun imageCompanion() = """{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Image: source: /tmp/s/images/1.png]"}]},"isMeta":true}"""
     private val readImageResult = """{"type":"user","message":{"role":"user","content":[{"tool_use_id":"t","type":"tool_result","content":[{"type":"image","source":{"type":"base64","data":"iVBORw0KGgo=","media_type":"image/png"}}]}]}}"""
+    private fun localCommand(content: String) =
+        """{"type":"system","subtype":"local_command","content":${kotlinx.serialization.json.JsonPrimitive(content)},"isSidechain":false,"sessionId":"s"}"""
     private val toolResult = """{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"x"}]}}"""
 
     @Test fun projectDirEncodesCwd() {
@@ -128,6 +130,26 @@ class SessionStoreTest {
                 ChatItem.AssistantText("h-1", "hi there", false),
                 ChatItem.UserText("h-2", "next one"),
                 ChatItem.AssistantText("h-3", "ok", false),
+            ),
+            store.read(cwd, "s1").items)
+    }
+
+    @Test fun transcriptShowsLocalCommandsAndTheirOutput() {
+        val store = SessionStore(tmp.root)
+        write(store, "s1", 1,
+            user("hello"),
+            localCommand("<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args>opus</command-args>"),
+            localCommand("<local-command-stdout>Set model to Opus\n  (default)</local-command-stdout>"),
+            localCommand("/plugin list"),
+            localCommand("<local-command-stdout></local-command-stdout>"),
+            assistant("ok"))
+        assertEquals(
+            listOf(
+                ChatItem.UserText("h-0", "hello"),
+                ChatItem.UserText("h-1", "/model opus"),
+                ChatItem.AssistantText("h-2", "Set model to Opus\n  (default)", false, commandOutput = true),
+                ChatItem.UserText("h-3", "/plugin list"),
+                ChatItem.AssistantText("h-4", "ok", false),
             ),
             store.read(cwd, "s1").items)
     }

@@ -97,6 +97,10 @@ class CliParserTest {
         assertEquals("/p/a.txt", tool.input.str("file_path"))
     }
 
+    @Test fun aLocalCommandsOutputIsMarkedAsCommandOutput() {
+        assertEquals(CliEvent.AssistantText("m1", "a\n  b", commandOutput = true), blocks(Fx.commandOutput("m1", "a\n  b")).single())
+    }
+
     @Test fun thinkingBlocksProduceNoEvents() {
         assertTrue(blocks(Fx.assistantThinking("m1")).isEmpty())
     }

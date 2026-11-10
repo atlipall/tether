@@ -715,7 +715,7 @@ class ChatSession(
     private fun onAssistantText(event: CliEvent.AssistantText) {
         when {
             event.parentId != null -> emit(ChatItem.AssistantText(nextId("text"), event.text, false, cardOf(event.parentId)))
-            event.messageId !in streamedMessages -> emit(ChatItem.AssistantText(nextId("text"), event.text, false))
+            event.messageId !in streamedMessages -> emit(ChatItem.AssistantText(nextId("text"), event.text, false, commandOutput = event.commandOutput))
         }
     }
 

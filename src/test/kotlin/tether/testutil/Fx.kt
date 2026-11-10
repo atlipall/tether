@@ -109,6 +109,10 @@ object Fx {
     fun assistantText(msg: String, text: String, uuid: String = "u5") =
         """{"type":"assistant","message":{"model":"claude-opus-5-5","id":"$msg","type":"message","role":"assistant","content":[{"type":"text","text":${q(text)}}],"stop_reason":null},"parent_tool_use_id":null,"session_id":"sess-1","uuid":"$uuid"}"""
 
+    /** The synthetic assistant line the CLI writes for a local command such as `/usage`. */
+    fun commandOutput(msg: String, text: String) =
+        """{"type":"assistant","message":{"model":"<synthetic>","id":"$msg","type":"message","role":"assistant","content":[{"type":"text","text":${q(text)}}],"stop_reason":"end_turn"},"parent_tool_use_id":null,"local_command_source":${q("<local-command-stdout>$text</local-command-stdout>")},"session_id":"sess-1","uuid":"u7"}"""
+
     fun assistantThinking(msg: String, uuid: String = "u5") =
         """{"type":"assistant","message":{"model":"claude-opus-5-5","id":"$msg","type":"message","role":"assistant","content":[{"type":"thinking","thinking":"","signature":"sig"}],"stop_reason":null},"parent_tool_use_id":null,"session_id":"sess-1","uuid":"$uuid"}"""
 

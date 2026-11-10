@@ -628,7 +628,7 @@
   function inputDetails(t) {
     const body = inputBody(t);
     if (!body) return null;
-    return h('details', { open: t.status === 'awaiting_permission' }, h('summary', {}, 'Input'), ...body[1]);
+    return h('details', { open: t.status === 'awaiting_permission' }, h('summary', {}, body[0]), ...body[1]);
   }
 
   /** Tool rows and turn file lists the user has expanded, by item id, so a re-render of the same item keeps them open. */

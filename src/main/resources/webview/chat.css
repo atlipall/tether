@@ -98,11 +98,13 @@ button.link { background: none; border: none; color: var(--accent); padding: 2px
 .request a.mention { color: var(--accent); }
 .request-revisions { margin-left: 8px; }
 .request .tool-detail { margin-left: 4px; }
-pre.diff { display: grid; grid-template-columns: minmax(100%, max-content); white-space: pre; overflow: auto; max-height: 40vh; margin: 2px 0 4px; padding: 4px 0; background: var(--bg); font-family: ui-monospace, Menlo, monospace; font-size: .92em; line-height: 1.4; }
+pre.diff { display: grid; grid-template-columns: minmax(100%, max-content); white-space: pre; overflow: auto; max-height: 40vh; margin: 2px 0 4px; padding: 4px 0; background: var(--bg); }
 pre.diff > span { padding: 0 8px; }
 .msg.assistant p { margin: .4em 0; }
-pre { background: var(--code-bg); padding: 6px 8px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; margin: 4px 0; }
+pre { background: var(--code-bg); padding: 6px 8px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; margin: 4px 0; font-family: ui-monospace, Menlo, monospace; font-size: .92em; line-height: 1.4; }
+.tool.status-awaiting_permission details > pre { max-height: 40vh; overflow-y: auto; }
 code { font-family: ui-monospace, Menlo, monospace; font-size: .95em; }
+pre code { font-size: inherit; }
 a { color: var(--accent); text-decoration: none; cursor: pointer; }
 a:hover { text-decoration: underline; }
 .tool { border-left: 3px solid var(--border); padding: 2px 8px; }
@@ -110,7 +112,7 @@ a:hover { text-decoration: underline; }
 .tool.status-error, .tool.status-denied { border-left-color: var(--danger); }
 .tool-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .tool-name { font-weight: 600; }
-.tool-summary { color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+.tool-summary { color: var(--muted); }
 .tool.compact { border-left: 0; padding: 0; }
 .tool-row { display: flex; align-items: baseline; gap: 8px; padding: 2px 4px; border-radius: 4px; color: var(--muted); }
 .tool-row[role=button], .tool-row.expandable { cursor: pointer; }

@@ -136,7 +136,7 @@ window.runComposerMenuTests = function () {
   });
   test('Claude retains the native model and effort dialog and host-confirmed choices', () => {
     receive({ type: 'agent', agents, selected: 'claude', locked: false });
-    receive({ type: 'model', model: 'default', effort: 'high', options: [
+    receive({ type: 'model', model: 'default', modelName: 'Opus', effort: 'high', options: [
       { value: 'default', name: 'Default', description: 'Opus · Recommended' },
       { value: 'sonnet', name: 'Sonnet', description: 'Sonnet · Fast' },
     ], efforts: ['low', 'high'] });

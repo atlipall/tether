@@ -332,6 +332,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
         val msg = parseJsonObject(ChatBridge.modelMessage(tether.cli.ModelChoice(options, "default", "high")))!!
         assertEquals("model", msg.str("type"))
         assertEquals("default", msg.str("model"))
+        assertEquals("Default (recommended)", msg.str("modelName"))
         assertEquals("high", msg.str("effort"))
         assertEquals(listOf("low", "high"), msg.arr("efforts")!!.map { (it as JsonPrimitive).content })
         val shown = msg.arr("options")!!.map { it.jsonObject }

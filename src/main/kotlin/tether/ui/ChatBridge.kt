@@ -562,10 +562,14 @@ class ChatBridge(
         /** Longest model name or description shown in the picker. */
         const val MAX_MODEL_TEXT = 60
 
-        /** The header's model and effort pickers; option names and descriptions are cleaned like context category names. */
+        /**
+         * The composer's model and effort pickers, with the chip's [ModelChoice.modelName]; it and the option names and
+         * descriptions are cleaned like context category names.
+         */
         fun modelMessage(choice: ModelChoice): String = buildJsonObject {
             put("type", "model")
             put("model", choice.model)
+            put("modelName", ContextNotes.clean(choice.modelName, MAX_MODEL_TEXT).ifEmpty { choice.model })
             choice.effort?.let { put("effort", it) }
             putJsonArray("efforts") { choice.efforts.forEach { add(it) } }
             putJsonArray("options") {

@@ -14,9 +14,26 @@ data class RunningModel(val model: String, val effort: String?)
 /** What the header's pickers show: [model] is one of [options]' values, [effort] the level in use (null for none). */
 data class ModelChoice(val options: List<ModelOption>, val model: String, val effort: String?) {
     /** The effort levels the shown model takes; empty hides the effort picker. */
-    val efforts: List<String> get() = options.firstOrNull { it.value == model }?.efforts.orEmpty()
+    val efforts: List<String> get() = shown?.efforts.orEmpty()
+
+    /** The option whose value is [model]; null only for a choice built without it. */
+    private val shown: ModelOption? get() = options.firstOrNull { it.value == model }
+
+    /**
+     * The name of the model the shown option runs, for the composer's chip: the option's own display name ("Fable 5.2"),
+     * except for the [DEFAULT_ALIAS], whose name ("Default (recommended)") gives way to that of another option running
+     * the same model ("Opus 5.5").
+     */
+    val modelName: String get() {
+        val shown = shown ?: return model
+        if (shown.value != DEFAULT_ALIAS || shown.resolved == null) return shown.name
+        return options.firstOrNull { it.value != DEFAULT_ALIAS && it.resolved == shown.resolved }?.name ?: shown.name
+    }
 
     companion object {
+        /** The CLI's alias for its recommended model, whose display name names the role rather than the model. */
+        const val DEFAULT_ALIAS = "default"
+
         /**
          * The option running [running]'s model: [chosen] (the value the user picked) while it is the one running,
          * otherwise the first that names it. A model no option names (a custom id) is added as its own option.

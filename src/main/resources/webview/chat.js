@@ -45,10 +45,12 @@
   let history = [];
   /** The slash commands the agent offers, as `{ name, description, hint }`; empty until it reports them. */
   let commands = [];
-  /** Index into [history] while recalling, -1 otherwise. */
+  /**
+   * Index into [history] while a recalled message is shown untouched, -1 otherwise. Recall starts with Up in an empty
+   * box; typing, clicking in the box or any key but plain Up and Down ends it, and the arrows then move the caret
+   * until the box is empty again.
+   */
   let recall = -1;
-  /** What the box held before recall started. */
-  let draft = '';
   /** The predicted next prompt shown in the empty box; Tab takes it. */
   let suggestion = '';
   /** The last state was IDLE: a suggestion that lands later than a new turn's state is stale. */
@@ -1556,54 +1558,56 @@
     attachments.forEach(removeTile);
     clearSentText();
     recall = -1;
-    draft = '';
     setSuggestion('');
   }
 
-  const caretOnFirstLine = () => !input.value.slice(0, input.selectionStart).includes('\n');
-  const caretOnLastLine = () => !input.value.slice(input.selectionEnd).includes('\n');
+  /** Whether Up steps back through sent messages: from an empty box, or on from a recalled one. */
+  const canRecallBack = () => recall !== -1 || !input.value;
+
+  /** Keys that leave recall going: plain Up and Down step it, and a modifier pressed on its own is not a choice yet. */
+  const RECALL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'Shift', 'Control', 'Alt', 'Meta']);
+  const hasModifier = (e) => e.shiftKey || e.altKey || e.ctrlKey || e.metaKey;
+
+  /** Whether [e] ends recall, leaving the shown message to edit: any key but plain Up and Down, or a lone modifier. */
+  const endsRecall = (e) => recall !== -1 && (!RECALL_KEYS.has(e.key) || (e.key.startsWith('Arrow') && hasModifier(e)));
 
   /**
-   * Pure recall state machine. s = { recall, draft }; dir = 'up' | 'down'.
-   * Returns { recall, draft, text } where text is the new box content, or null when the key is not handled.
+   * Where recall goes from [current] (-1 for not recalling) in [dir], 'up' or 'down', through [count] sent messages:
+   * Up starts at the newest and stops at the oldest, Down past the newest ends recall. Null when the key does nothing.
    */
-  function recallStep(s, dir, entries, value) {
+  function recallStep(current, dir, count) {
     if (dir === 'up') {
-      let r = s.recall, d = s.draft;
-      if (r === -1) {
-        if (!entries.length) return null;
-        d = value;
-        r = entries.length;
-      }
-      r = Math.min(r, entries.length);
-      if (r > 0) r--;
-      return { recall: r, draft: d, text: entries[r] };
+      if (!count) return null;
+      const from = current === -1 ? count : current;
+      return Math.max(from - 1, 0);
     }
-    if (s.recall === -1) return null;
-    const r = s.recall + 1;
-    if (r >= entries.length) return { recall: -1, draft: s.draft, text: s.draft };
-    return { recall: r, draft: s.draft, text: entries[r] };
+    if (current === -1) return null;
+    return current + 1 < count ? current + 1 : -1;
   }
 
-  /** Steps recall in [dir] and puts the entry in the box as its value, never parsed as HTML; false when not handled. */
+  /**
+   * Steps recall in [dir] and shows the message as the box's value, never parsed as HTML; past the newest the box is
+   * empty again, as recall started from an empty box. False when the key does nothing.
+   */
   function recallKey(dir) {
-    const step = recallStep({ recall, draft }, dir, history, input.value);
-    if (!step) return false;
-    recall = step.recall;
-    draft = step.draft;
-    setInput(step.text);
+    const next = recallStep(recall, dir, history.length);
+    if (next === null) return false;
+    recall = next;
+    setInput(next === -1 ? '' : history[next]);
     return true;
   }
 
   input.addEventListener('keydown', (e) => {
     if (window.TextKeys.isComposing(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); return; }
-    if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (endsRecall(e)) recall = -1;
+    if (hasModifier(e)) return;
     if (e.key === 'Escape' && stoppable() && !input.value) { e.preventDefault(); send({ type: 'interrupt' }); return; }
     if (e.key === 'Tab' && suggestion && !input.value) { e.preventDefault(); acceptSuggestion(); return; }
-    if (e.key === 'ArrowUp' && caretOnFirstLine() && recallKey('up')) e.preventDefault();
-    else if (e.key === 'ArrowDown' && caretOnLastLine() && recallKey('down')) e.preventDefault();
+    if (e.key === 'ArrowUp' && canRecallBack() && recallKey('up')) e.preventDefault();
+    else if (e.key === 'ArrowDown' && recall !== -1 && recallKey('down')) e.preventDefault();
   });
+  input.addEventListener('pointerdown', () => { recall = -1; });
   /** Takes the agent's commands, and mentions `/` in the box's hint only while there are some to offer. */
   function setCommands(items) {
     commands = items;
@@ -1661,7 +1665,7 @@
     text: (f) => f.mention + ' ',
   };
 
-  /** Typing ends recall (the edited text becomes the new draft), dismisses the suggestion and reports the text to the host. */
+  /** Typing ends recall, dismisses the suggestion and reports the text to the host. */
   function onTyped() {
     recall = -1;
     if (suggestion) setSuggestion('');

@@ -301,6 +301,48 @@ window.runComposerTests = async function () {
     assert(input.placeholder === 'Message Claude', `The suggestion is gone: ${input.placeholder}`);
   });
 
+  await test('Up in an empty box recalls, and Up and Down step through sent messages', () => {
+    clear();
+    receive({ type: 'history', entries: ['first', 'second\nline'] });
+    assert(key('ArrowUp') && input.value === 'second\nline', 'Up recalls the last message');
+    assert(key('ArrowUp') && input.value === 'first', 'Up again steps back, wherever the caret is');
+    assert(key('ArrowDown') && input.value === 'second\nline', 'Down steps forward');
+    assert(key('ArrowDown') && input.value === '', 'Down past the newest returns to the empty box');
+  });
+
+  await test('Up and Down move the caret in text being written, even on its first or last line', () => {
+    clear();
+    receive({ type: 'history', entries: ['old'] });
+    type('line one\nline two');
+    input.setSelectionRange(3, 3);
+    assert(!key('ArrowUp'), 'Up on the first line is left to the box');
+    input.setSelectionRange(input.value.length, input.value.length);
+    assert(!key('ArrowDown'), 'Down on the last line is left to the box');
+    assert(input.value === 'line one\nline two', 'The text stays');
+  });
+
+  await test('moving the caret in a recalled message ends recall', () => {
+    clear();
+    receive({ type: 'history', entries: ['first', 'second'] });
+    key('ArrowUp');
+    key('ArrowLeft');
+    assert(!key('ArrowUp') && input.value === 'second', 'Up now moves the caret');
+    clear();
+    key('ArrowUp');
+    input.dispatchEvent(new PointerEvent('pointerdown'));
+    assert(!key('ArrowUp') && input.value === 'second', 'A click ends recall too');
+    clear();
+    key('ArrowUp');
+    key('ArrowUp', { shiftKey: true });
+    assert(!key('ArrowUp') && input.value === 'second', 'Selecting with Shift+Up ends recall');
+    clear();
+    key('ArrowUp');
+    key('Shift');
+    assert(key('ArrowUp') && input.value === 'first', 'A lone modifier keeps recall going');
+    clear();
+    assert(!key('ArrowDown'), 'Down in an empty box does nothing');
+  });
+
   clear();
   return results;
 };

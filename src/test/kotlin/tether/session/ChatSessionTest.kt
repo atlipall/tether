@@ -186,6 +186,38 @@ class ChatSessionTest {
         assertNull(done.lastTool)
     }
 
+    private fun resumeAgent() {
+        conn.emit(Fx.toolUse("m2", "t5", "SendMessage", """{"to":"a1","message":"One more thing"}"""))
+        conn.emit(Fx.taskStarted("t5", true, "One more thing"))
+    }
+
+    private fun agentCard() = listener.current().filterIsInstance<ChatItem.ToolCall>().single { it.id == "t1" }
+
+    @Test fun aResumedAgentRunsAgainOnItsFirstCard() {
+        val s = session()
+        startAgent(s, background = true)
+        conn.emit(Fx.taskNotification("t1", report = "All done"))
+        resumeAgent()
+        assertEquals(AgentInfo("general-purpose", true, "Do it", AgentState.RUNNING, taskId = "a1"), agentCard().agent)
+        assertNull(listener.current().filterIsInstance<ChatItem.ToolCall>().single { it.id == "t5" }.agent)
+        conn.emit(Fx.taskProgress("t5", 1, 300, "Read"))
+        assertEquals("Read", agentCard().agent!!.lastTool)
+        conn.emit(Fx.taskNotification("t5", report = "Also done"))
+        assertEquals(AgentState.DONE, agentCard().agent!!.state)
+        assertEquals("Also done", agentCard().agent!!.report)
+    }
+
+    @Test fun aResumedAgentsItemsGoOnItsFirstCard() {
+        val s = session()
+        startAgent(s, background = true)
+        conn.emit(Fx.taskNotification("t1"))
+        resumeAgent()
+        conn.emit(Fx.subagentText("t5", "sm2", "Looking again"))
+        conn.emit(Fx.subagentToolUse("t5", "t6", "Bash", """{"command":"ls"}"""))
+        assertEquals("t1", listener.latest<ChatItem.AssistantText>().parentId)
+        assertEquals("t1", listener.latest<ChatItem.ToolCall>().parentId)
+    }
+
     @Test fun aFailedAgentIsFailed() {
         val s = session()
         startAgent(s)

@@ -7,9 +7,10 @@ data class Lines(val start: Int, val end: Int)
 data class Symbol(val name: String, val kind: String?, val lines: Lines)
 
 /**
- * Where the user is looking. [path] is absolute when captured and, once resolved for a chat ([ContextPaths.forChat]),
- * relative to that chat's folder. [line] and [column] are 1-based (the column counts characters). [container] is the
- * nearest function-like element around [symbol], set only when [symbol] itself is not function-like.
+ * Where the user is looking. [path] is absolute when captured and, once resolved for a chat ([ContextPaths.forNote]),
+ * relative to that chat's folder, or still absolute for a file outside the project. [line] and [column] are 1-based
+ * (the column counts characters). [container] is the nearest function-like element around [symbol], set only when
+ * [symbol] itself is not function-like.
  */
 data class EditorContext(
     val path: String,

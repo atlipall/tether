@@ -126,7 +126,7 @@ class EditorContextService(private val project: Project) : Disposable {
     /**
      * The cheap part of the context plus the symbol only if the cache holds it for the current caret, selection and text;
      * never walks PSI, so it is safe on the EDT (listeners and sends read this). Null without a context editor or a name for the
-     * file in [cwd] ([ContextPaths.forChat]). Does not commit the document: only a lookup start needs that.
+     * file in [cwd] ([ContextPaths.forNote]). Does not commit the document: only a lookup start needs that.
      */
     fun contextFor(cwd: String): EditorContext? {
         val cheap = cheap(commit = false) ?: return null
@@ -167,7 +167,7 @@ class EditorContextService(private val project: Project) : Disposable {
         lastFocused?.takeIf(::accepts) ?: FileEditorManager.getInstance(project).selectedTextEditor?.takeIf(::accepts)
 
     private fun pathFor(cheap: Cheap, cwd: String): String? =
-        ContextPaths.forChat(cheap.file.path, cwd, projectDir) { cheap.file.fileSystem.findFileByPath(it) != null }
+        ContextPaths.forNote(cheap.file.path, cwd, projectDir) { cheap.file.fileSystem.findFileByPath(it) != null }
 
     private fun build(cheap: Cheap, path: String, found: Found?) =
         EditorContext(path, cheap.line, cheap.column, cheap.selection, found?.symbol, found?.container)

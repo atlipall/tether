@@ -192,6 +192,13 @@ class EditorContextServiceTest : BasePlatformTestCase() {
         assertEquals("a.js", service.contextFor("$root/src")!!.path)
     }
 
+    fun testAFileOutsideTheProjectIsNamedByItsAbsolutePath() {
+        val scratch = myFixture.addFileToProject("scratches/scratch_1.txt", "IllegalStateException").virtualFile
+        myFixture.openFileInEditor(scratch)
+        service.projectDir = "$root/project"
+        assertEquals(scratch.path, service.contextFor("$root/project")!!.path)
+    }
+
     fun testAFailingStructureModelMeansNoSymbol() {
         assertEquals(null to null, SymbolFinder.safely { throw IllegalStateException("boom") })
         val symbol = Symbol("f", "function", Lines(1, 1))

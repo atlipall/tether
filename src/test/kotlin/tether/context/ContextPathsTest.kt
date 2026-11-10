@@ -15,6 +15,7 @@ class ContextPathsTest {
     private val none = { _: String -> false }
 
     private fun forChat(file: String, cwd: String, exists: (String) -> Boolean = all) = ContextPaths.forChat(file, cwd, "/p", exists)
+    private fun forNote(file: String, cwd: String, exists: (String) -> Boolean = all) = ContextPaths.forNote(file, cwd, "/p", exists)
 
     @Test fun fileInTheChatsFolder() {
         assertEquals("src/a.ts", forChat("/p/src/a.ts", "/p", none))
@@ -48,10 +49,28 @@ class ContextPathsTest {
         assertNull(forChat("/other/a.ts", "/p/.claude/worktrees/new1", none))
     }
 
-    @Test fun filesOutsideTheChatsFolderHaveNoContext() {
+    @Test fun filesOutsideTheChatsFolderHaveNoChatPath() {
         assertNull(forChat("/other/a.ts", "/p"))
         assertNull(forChat("/other/a.ts", "/p/.claude/worktrees/wt1"))
         assertNull(forChat("/p", "/p"))
+    }
+
+    @Test fun aNoteNamesAFileOutsideTheProjectByItsAbsolutePath() {
+        assertEquals("/other/scratch.txt", forNote("/other/scratch.txt", "/p"))
+        assertEquals("/other/scratch.txt", forNote("/other/scratch.txt", "/p/.claude/worktrees/wt1"))
+        assertEquals("/other/scratch.txt", forNote("/other/scratch.txt", "/p/.claude/worktrees/new1", none))
+    }
+
+    @Test fun aNoteNamesAFileInTheChatsFolderAsTheChatDoes() {
+        assertEquals("src/a.ts", forNote("/p/src/a.ts", "/p"))
+        assertEquals("src/a.ts", forNote("/p/.claude/worktrees/wt1/src/a.ts", "/p"))
+    }
+
+    @Test fun aNoteNeverNamesAFileInAnotherCheckoutOfTheProject() {
+        val wt = "/p/.claude/worktrees/wt1"
+        assertNull(forNote("/p/src/new.ts", wt) { it == wt })
+        assertNull(forNote("/p/.claude/worktrees/wt1/new.ts", "/p", none))
+        assertNull(forNote("/p/src/a.ts", "/elsewhere/wt"))
     }
 
     @Test fun chatOutsideTheProjectUsesItsOwnFolder() {

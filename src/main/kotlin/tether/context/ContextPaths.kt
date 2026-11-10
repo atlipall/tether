@@ -27,6 +27,17 @@ object ContextPaths {
         return relativeTo(path, chat?.dir ?: canonicalPath(cwd))
     }
 
+    /**
+     * [file] as the editor-context note names it: as [forChat] does, else by its absolute path when it lies outside
+     * every checkout of the project at [projectDir] (a scratch file, a log, another repository), since Claude can read
+     * it there. Null for a file in the project that the chat has no name for (one in another checkout with no
+     * counterpart in the chat's, or any project file seen from a chat outside the project), so Claude is never
+     * pointed at a checkout it doesn't work in.
+     */
+    fun forNote(file: String, cwd: String, projectDir: String, exists: (String) -> Boolean): String? =
+        forChat(file, cwd, projectDir, exists)
+            ?: canonicalPath(file).takeIf { CheckoutMapper(projectDir).checkoutOf(it) == null }
+
     private fun relativeTo(path: String, dir: String): String? =
         path.removePrefix(dir.trimEnd('/') + "/").takeIf { it != path && it.isNotEmpty() }
 }

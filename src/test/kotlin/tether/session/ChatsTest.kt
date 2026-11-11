@@ -1059,14 +1059,28 @@ class ChatsTest : BasePlatformTestCase() {
 
     fun testBusyFollowsTheTurn() {
         val chat = chats.open(ChatSpec.inProject(root))
-        var changes = 0
-        chat.onBusyChanged = { changes++ }
+        val turnEnded = mutableListOf<Boolean>()
+        chat.onStatusChanged = { turnEnded += it }
         assertFalse(chat.busy)
         chat.send("go")
         assertTrue(chat.busy)
         connections.single().emit(Fx.result())
         assertFalse(chat.busy)
-        assertEquals(2, changes)
+        assertEquals(listOf(false, true), turnEnded)
+    }
+
+    fun testWaitingFollowsAQuestion() {
+        val chat = chats.open(ChatSpec.inProject(root))
+        val turnEnded = mutableListOf<Boolean>()
+        chat.send("go")
+        chat.onStatusChanged = { turnEnded += it }
+        assertFalse(chat.waiting)
+        connections.single().emit(Fx.toolUse("m1", "tq", "AskUserQuestion", Fx.COLOUR_QUESTION), Fx.askQuestion("q1", "tq"))
+        assertTrue(chat.waiting)
+        assertTrue(chat.busy)
+        connections.single().emit(Fx.result())
+        assertFalse(chat.waiting)
+        assertEquals(listOf(false, true), turnEnded)
     }
 
     fun testALookupThatFailsSendsTheLocationOnly() {

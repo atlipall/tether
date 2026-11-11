@@ -12,7 +12,6 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowManager
-import com.intellij.ui.AnimatedIcon
 import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentFactory
 import java.util.concurrent.atomic.AtomicBoolean
@@ -33,11 +32,11 @@ class ChatTabs(private val project: Project, private val toolWindow: ToolWindow)
         content.isCloseable = true
         content.putUserData(CHAT, chat)
         val closed = AtomicBoolean(false)
-        Disposer.register(content) { closed.set(true); chat.onBusyChanged = null; registry.close(chat) }
+        Disposer.register(content) { closed.set(true); chat.onStatusChanged = null; registry.close(chat) }
         val panel = ChatPanel(project, chat, parent = content)
         content.component = panel.browser.component
         content.preferredFocusableComponent = panel.browser.component
-        showBusyIcon(content, chat, closed)
+        showStatusIcon(content, chat, closed)
         chat.onTitleChanged = {
             ApplicationManager.getApplication().invokeLater({ if (!closed.get()) content.displayName = chat.title }, project.disposed)
         }
@@ -51,14 +50,14 @@ class ChatTabs(private val project: Project, private val toolWindow: ToolWindow)
     }
 
     /**
-     * Makes [content]'s icon follow [chat]'s busy state. The tool window draws icons only for contents that ask for
-     * them; the state is read again on the EDT so a late callback never shows a stale one.
+     * Makes [content]'s icon and the tool window's badge follow [chat]'s state (see [TabAttention]). The tool window
+     * draws icons only for contents that ask for them.
      */
-    private fun showBusyIcon(content: Content, chat: Chat, closed: AtomicBoolean) {
+    private fun showStatusIcon(content: Content, chat: Chat, closed: AtomicBoolean) {
         content.putUserData(ToolWindow.SHOW_CONTENT_ICON, true)
-        chat.onBusyChanged = {
+        chat.onStatusChanged = { turnEnded ->
             ApplicationManager.getApplication().invokeLater({
-                if (!closed.get()) content.icon = if (chat.busy) AnimatedIcon.Default.INSTANCE else null
+                if (!closed.get()) TabAttention.chatChanged(toolWindow, content, turnEnded)
             }, project.disposed)
         }
     }

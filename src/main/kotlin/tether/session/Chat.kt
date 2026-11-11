@@ -204,8 +204,14 @@ class Chat(
     /** True while a turn is running or waiting for the user, or background agents are working. */
     val busy: Boolean get() = synchronized(activityLock) { sessionActivity != null }
 
-    /** Called on the CLI reader thread (or the EDT) when [busy] changes. */
-    @Volatile var onBusyChanged: (() -> Unit)? = null
+    /** True while the turn waits for the user: a question to answer or a tool to allow. */
+    val waiting: Boolean get() = synchronized(activityLock) { sessionActivity == Activity.Waiting }
+
+    /**
+     * Called on the CLI reader thread (or the EDT) when [busy] or [waiting] changes; `turnEnded` is true when the chat
+     * went from busy to idle.
+     */
+    @Volatile var onStatusChanged: ((turnEnded: Boolean) -> Unit)? = null
 
     @Volatile private var contextUsage: ContextUsage? = null
     @Volatile private var modelChoice: ModelChoice? = null
@@ -237,11 +243,14 @@ class Chat(
         }
     }
 
+    /** Whether the chat is busy, and whether it waits for the user, while [this] is its activity. */
+    private fun Activity?.status() = (this != null) to (this == Activity.Waiting)
+
     private val listener = object : ChatListener {
         override fun onActivity(activity: Activity?) {
-            val wasBusy = synchronized(activityLock) { (sessionActivity != null).also { sessionActivity = activity } }
+            val was = synchronized(activityLock) { sessionActivity.also { sessionActivity = activity } }
             publishActivity()
-            if (wasBusy != (activity != null)) onBusyChanged?.invoke()
+            if (was.status() != activity.status()) onStatusChanged?.invoke(was != null && activity == null)
         }
 
         override fun onContext(usage: ContextUsage) {

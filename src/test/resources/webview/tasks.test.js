@@ -46,8 +46,9 @@ window.runTasksTests = function () {
 
   receive({ type: 'item', item: agentCall('a1', 'done') });
 
-  test('a finished agent sorts after running ones and can be dismissed', () => {
-    assert(getComputedStyle(card('a1')).order > getComputedStyle(card('a2')).order, 'Finished agents must sort last');
+  test('a finished agent keeps its place and can be dismissed', () => {
+    const tops = [card('a1'), card('a2')].map((el) => el.getBoundingClientRect().top);
+    assert(tops[0] < tops[1], 'Agents must stay in the order they started, whatever their state');
     assert(!card('a1').querySelector('[data-action="stopTask"]'), 'A finished agent offers no Stop');
     card('a1').querySelector('[data-action="dismissTask"]').click();
     assert(card('a1').hidden, 'Dismiss must hide the finished agent');

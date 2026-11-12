@@ -165,16 +165,39 @@ class ChatsTest : BasePlatformTestCase() {
             openChats.loadState(OpenChats.State().apply {
                 chats = listOf("kept" to main, "named" to wt.path, "archived" to main, "no-transcript" to main, "gone" to "/no/such/folder")
                     .map { (id, cwd) -> OpenChats.Entry().apply { sessionId = id; this.cwd = cwd } }.toMutableList()
-                chats[0].apply { mode = "plan"; model = "sonnet"; effort = "low" }
+                chats[0].apply { mode = "plan"; model = "sonnet"; effort = "low"; branch = "login-fix" }
                 chats[1].apply { mode = "not-a-mode" }
             })
             val specs = chats.restorable().map { it.first }
             assertEquals(listOf("kept", "named"), specs.map { it.resumeId })
             assertEquals(listOf(main, wt.path), specs.map { it.cwd })
             assertEquals("Login fix", specs[1].title)
+            assertEquals(listOf("login-fix", null), specs.map { it.homeBranch })
             assertEquals(SessionSetup(PermissionMode.PLAN, "sonnet", "low"), specs[0].setup)
             assertEquals("an unknown mode is dropped, and nothing saved is nothing chosen", SessionSetup(), specs[1].setup)
         } finally { dir.deleteRecursively() }
+    }
+
+    fun testTheBranchAChatWorkedOnIsRememberedAndRestored() {
+        val repo = gitRepo() ?: return
+        try {
+            openChats.loadState(OpenChats.State())
+            openChats.startTracking()
+            val chat = chats.open(ChatSpec.inProject(repo.path))
+            assertNull("a chat that has not worked has no branch", chat.homeBranch)
+            chat.send("branch off")
+            awaitMessages(connections.single(), 1)
+            connections.single().emit(Fx.init(sessionId = "s-b", cwd = repo.path))
+            assertEquals("main", chat.homeBranch)
+            git(repo, "checkout", "-q", "-b", "login-fix")
+            connections.single().emit(Fx.result())
+            assertEquals("a branch Claude moved to during the turn becomes the chat's", "login-fix", chat.homeBranch)
+            git(repo, "checkout", "-q", "main")
+            assertEquals("switching by hand does not change it", "login-fix", chat.homeBranch)
+            assertEquals("login-fix", openChats.state.chats.single().branch)
+            assertEquals("login-fix", openChats.saved().single().branch)
+            chats.close(chat)
+        } finally { repo.deleteRecursively() }
     }
 
     fun testEachChatsModeModelAndEffortAreRemembered() {

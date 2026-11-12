@@ -25,6 +25,16 @@ fun insideRepository(dir: String): Boolean = try {
     false
 }
 
+/**
+ * The folder of [dir]'s checkout: the nearest folder at or above it that holds a `.git`. Chats in the same checkout
+ * share one working tree and one HEAD. Null outside a repository. No git process, so safe on the EDT.
+ */
+fun checkoutRoot(dir: String): String? = try {
+    dotGit(dir)?.parentFile?.path
+} catch (_: Exception) {
+    null
+}
+
 private fun dotGit(dir: String): File? =
     generateSequence(File(dir).absoluteFile) { it.parentFile }.map { File(it, ".git") }.firstOrNull { it.exists() }
 

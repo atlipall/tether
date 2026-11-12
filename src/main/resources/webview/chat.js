@@ -29,6 +29,11 @@
   const restartBtn = document.getElementById('restart');
   const statusEl = document.getElementById('status');
   const checkoutEl = document.getElementById('checkout');
+  const branchBar = document.getElementById('branch-bar');
+  const branchBarText = document.getElementById('branch-bar-text');
+  const branchBarNote = document.getElementById('branch-bar-note');
+  const branchSwitchBtn = document.getElementById('branch-switch');
+  const branchDismissBtn = document.getElementById('branch-dismiss');
   const openPrBtn = document.getElementById('open-pr');
   const openPrNumber = document.getElementById('open-pr-number');
   const usageEl = document.getElementById('usage');
@@ -200,6 +205,7 @@
         case 'history': history = Array.isArray(msg.entries) ? msg.entries : []; break;
         case 'commands': setCommands(Array.isArray(msg.items) ? msg.items : []); break;
         case 'checkout': setCheckout(msg.text); break;
+        case 'branchBar': setBranchBar(msg); break;
         case 'pullRequest': setPullRequest(msg); break;
         case 'usage': setUsage(msg); break;
         case 'model': setModel(msg); break;
@@ -1425,6 +1431,26 @@
     checkoutEl.hidden = !checkoutEl.textContent;
   }
 
+  /**
+   * Shows the bar saying the checkout is on another branch than the one this chat worked on, with a button to switch
+   * back, or hides it when the message names no branches. Branch names are plain text, never markup. Under the sentence: git's reason the last switch failed
+   * (as an error), or else why switching waits.
+   */
+  function setBranchBar(msg) {
+    const shown = typeof msg.home === 'string' && typeof msg.current === 'string';
+    branchBar.hidden = !shown;
+    if (!shown) return;
+    branchBarText.replaceChildren('This chat worked on ', h('span', { class: 'branch' }, msg.home), ', but the checkout is on ', h('span', { class: 'branch' }, msg.current), '.');
+    branchSwitchBtn.textContent = msg.switching ? 'Switching…' : `Switch to ${msg.home}`;
+    branchSwitchBtn.disabled = !!msg.switching || typeof msg.blocked === 'string';
+    branchSwitchBtn.title = `Check out ${msg.home} again`;
+    const error = typeof msg.error === 'string' ? msg.error : '';
+    const note = error || (typeof msg.blocked === 'string' ? msg.blocked : '');
+    branchBarNote.textContent = note;
+    branchBarNote.classList.toggle('error', !!error);
+    branchBarNote.hidden = !note;
+  }
+
   /** Longest pull request title the tooltip quotes in full; longer ones end in an ellipsis. */
   const PR_TITLE_MAX = 80;
 
@@ -1861,6 +1887,8 @@
   restartBtn.addEventListener('click', () => send({ type: 'restart' }));
   document.getElementById('show-changes').addEventListener('click', () => send({ type: 'showChanges' }));
   openPrBtn.addEventListener('click', () => { if (!openPrBtn.hidden) send({ type: 'openUrl', url: openPrBtn.dataset.url }); });
+  branchSwitchBtn.addEventListener('click', () => { if (!branchSwitchBtn.disabled) send({ type: 'switchBranch' }); });
+  branchDismissBtn.addEventListener('click', () => send({ type: 'dismissBranchBar' }));
   for (const picker of pickers) {
     picker.button.addEventListener('click', () => (picker.menu.hidden ? openMenu(picker) : closeMenu(picker, true)));
     picker.button.addEventListener('keydown', (e) => {

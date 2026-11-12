@@ -11,6 +11,7 @@ import tether.cli.parseJsonObject
 import tether.cli.str
 import tether.context.EditorContextService
 import tether.git.PullRequest
+import tether.session.BranchBar
 import tether.session.Chat
 import tether.session.ChatSpec
 import tether.session.Chats
@@ -505,6 +506,19 @@ class ChatBridgeTest : BasePlatformTestCase() {
         assertEquals("https://github.com/o/r/pull/12", msg.str("url"))
         assertEquals("Add a button", msg.str("title"))
         assertEquals("draft", msg.str("status"))
+    }
+
+    fun testTheBranchBarIsPostedAndReplayedToAPageThatAttaches() {
+        bridge.handle("""{"type":"ready"}""")
+        chat.showBranchBar(BranchBar("feature", "main", blocked = BranchBar.OTHER_CHAT_BUSY))
+        val msg = posted.last()
+        assertEquals(listOf("branchBar", "feature", "main", BranchBar.OTHER_CHAT_BUSY), listOf(msg.str("type"), msg.str("home"), msg.str("current"), msg.str("blocked")))
+        assertEquals(null, msg.str("error"))
+        posted.clear()
+        bridge.handle("""{"type":"ready"}""")
+        assertEquals("feature", posted.last { it.str("type") == "branchBar" }.str("home"))
+        chat.showBranchBar(null)
+        assertEquals(null, posted.last().str("home"))
     }
 
     fun testNoPullRequestIsPostedWithoutAnUrl() {

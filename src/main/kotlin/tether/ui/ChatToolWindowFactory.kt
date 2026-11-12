@@ -1,6 +1,7 @@
 package tether.ui
 
 import tether.follow.CheckoutFollower
+import tether.ide.BranchGuard
 import tether.session.ChatSpec
 import tether.session.Agent
 import tether.session.Chats
@@ -41,19 +42,25 @@ class ChatToolWindowFactory : ToolWindowFactory, DumbAware {
     }
 
     /**
-     * Keeps the [CheckoutFollower] on the selected tab's chat. Registered before the first tab, so selecting that one
-     * is followed too. A closed tab's chat leaves [Chats] only when its content is disposed, so the refresh after a
-     * removal waits a turn of the EDT.
+     * Keeps the [CheckoutFollower] on the selected tab's chat, and has the [BranchGuard] check the chats' branches when
+     * a tab is selected or closed. Registered before the first tab, so selecting that one is followed too. A closed
+     * tab's chat leaves [Chats] only when its content is disposed, so the refresh after a removal waits a turn of the EDT.
      */
     private fun followSelectedTab(project: Project, toolWindow: ToolWindow) {
         val follower = CheckoutFollower.getInstance(project)
+        val branches = BranchGuard.getInstance(project)
         toolWindow.contentManager.addContentManagerListener(object : ContentManagerListener {
             override fun selectionChanged(event: ContentManagerEvent) {
-                if (event.operation == ContentManagerEvent.ContentOperation.add) follower.follow(event.content.getUserData(ChatTabs.CHAT))
+                if (event.operation != ContentManagerEvent.ContentOperation.add) return
+                follower.follow(event.content.getUserData(ChatTabs.CHAT))
+                branches.refresh()
             }
 
             override fun contentRemoved(event: ContentManagerEvent) {
-                ApplicationManager.getApplication().invokeLater({ follower.refresh() }, project.disposed)
+                ApplicationManager.getApplication().invokeLater({
+                    follower.refresh()
+                    branches.refresh()
+                }, project.disposed)
             }
         })
     }

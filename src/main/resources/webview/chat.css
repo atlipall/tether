@@ -15,6 +15,13 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 #usage.near, .usage-tip-state.near { color: var(--warn); }
 #usage.full, .usage-tip-state.full { color: var(--danger); }
 #checkout { color: var(--muted); font-size: .9em; overflow-wrap: anywhere; }
+#branch-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--warn) 12%, var(--bg)); }
+#branch-bar[hidden], #branch-bar-note[hidden] { display: none; }
+#branch-bar-text { flex: 1 1 16em; min-width: 0; overflow-wrap: anywhere; }
+#branch-bar .branch { font-family: ui-monospace, Menlo, monospace; font-size: .92em; }
+.branch-bar-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+#branch-bar-note { flex-basis: 100%; color: var(--muted); font-size: .9em; overflow-wrap: anywhere; }
+#branch-bar-note.error { color: var(--danger); }
 #bar button.icon { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
 #bar button.icon svg { width: 15px; height: 15px; }
 #bar button.icon[hidden] { display: none; }

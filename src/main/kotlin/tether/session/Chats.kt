@@ -86,12 +86,12 @@ class Chats(private val project: Project) : Disposable {
                 return@mapNotNull null
             }
             val spec = ChatSpec(ChatNames.folderLabel(cwd, projectDir), cwd, resumeId = id,
-                title = saved.title, agentId = saved.agentId, agentMode = saved.agentMode, unsentText = saved.unsentText)
+                title = saved.title, agentId = saved.agentId, agentMode = saved.agentMode, unsentText = saved.unsentText, homeBranch = saved.branch)
             return@mapNotNull spec to Transcript(emptyList(), null, null, null)
         }
         try {
             val transcript = store.read(cwd, id)
-            transcript.summary?.takeUnless { it.archived }?.let { ChatSpec.resume(projectDir, it).copy(setup = setup, unsentText = saved.unsentText) to transcript }
+            transcript.summary?.takeUnless { it.archived }?.let { ChatSpec.resume(projectDir, it).copy(setup = setup, unsentText = saved.unsentText, homeBranch = saved.branch) to transcript }
         } catch (e: Exception) {
             if (e is ControlFlowException) throw e
             LOG.warn("Couldn't read session $id to reopen it", e)

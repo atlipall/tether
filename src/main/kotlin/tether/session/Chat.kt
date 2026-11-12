@@ -39,6 +39,9 @@ interface SessionView {
     /** What the IDE window shows for this chat (`IDE: <checkout>`); empty hides it. */
     fun checkout(text: String) {}
 
+    /** The bar saying the checkout is on another branch than the chat's; null hides it. */
+    fun branchBar(bar: BranchBar?) {}
+
     /** The GitHub pull request for the chat's branch; null hides the button that opens it. */
     fun pullRequest(pr: PullRequest?) {}
 
@@ -196,6 +199,18 @@ class Chat(
         private set
 
     /**
+     * The branch this chat works on: [cwd]'s branch when its last message went out or its last turn ended, so a branch
+     * Claude switched to or created during the turn becomes the chat's. Null until the chat has sent a message (or
+     * was restored with one), and kept as it was while HEAD is detached or a new worktree's folder is not known yet. Saved with the open chats.
+     */
+    @Volatile var homeBranch: String? = spec.homeBranch
+        private set
+
+    /** The branch bar the page shows, kept for a page that attaches later; see [showBranchBar]. */
+    @Volatile var branchBar: BranchBar? = null
+        private set
+
+    /**
      * The text in the message box not sent yet, as the page last reported it: given back to a reloaded page, and kept
      * with the open chats so it survives a restart. Empty once the message is sent.
      */
@@ -321,7 +336,10 @@ class Chat(
             idleSince = if (state == SessionState.IDLE) idleSince ?: System.currentTimeMillis() else null
             val running = state == SessionState.RUNNING || state == SessionState.AWAITING_PERMISSION
             val turnEnded = inTurn && !running
-            if (turnEnded) gitNotes?.turnEnded(this@Chat)
+            if (turnEnded) {
+                gitNotes?.turnEnded(this@Chat)
+                adoptBranch()
+            }
             inTurn = running
             saveTitleIfReady()
             view?.state(state, session.modeId)
@@ -481,6 +499,7 @@ class Chat(
         showAgent(view)
         synchronized(activityLock) { shownActivity }?.let(view::activity)
         checkoutText.takeIf { it.isNotEmpty() }?.let(view::checkout)
+        branchBar?.let(view::branchBar)
         pullRequest?.let(view::pullRequest)
         contextUsage?.let(view::context)
         modelChoice?.let(view::model)
@@ -538,6 +557,19 @@ class Chat(
             pullRequest = found
             view?.pullRequest(found)
         }
+    }
+
+    /** Shows [bar] on the page, or hides it for null. EDT. */
+    fun showBranchBar(bar: BranchBar?) {
+        if (bar == branchBar) return
+        branchBar = bar
+        view?.branchBar(bar)
+    }
+
+    /** Makes the branch [cwd] is on now this chat's [homeBranch]; detached HEAD and a predicted worktree folder keep it. */
+    private fun adoptBranch() {
+        if (cwdIsGuess) return
+        currentBranch(cwd)?.let { homeBranch = it }
     }
 
     fun showCheckout(text: String) {
@@ -598,6 +630,7 @@ class Chat(
             start()
             if (session.state == SessionState.DEAD) return insert(text)
         }
+        adoptBranch()
         val bare = SlashCommands.isInvocation(text)
         val edits = if (bare) null else editNote(this)
         outbox += Outgoing(text, edits, images, bare)

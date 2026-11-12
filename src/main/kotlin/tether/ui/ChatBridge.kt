@@ -9,6 +9,7 @@ import tether.cli.long
 import tether.cli.parseJsonObject
 import tether.cli.str
 import tether.git.PullRequest
+import tether.ide.BranchGuard
 import tether.ide.CheckoutDiff
 import tether.ide.FileFinder
 import tether.ide.FileLinker
@@ -24,6 +25,7 @@ import tether.context.ContextNotes
 import tether.session.Activity
 import tether.session.BackgroundProcess
 import tether.session.Agent
+import tether.session.BranchBar
 import tether.session.Chat
 import tether.session.ChatItem
 import tether.session.Choice
@@ -71,6 +73,7 @@ class ChatBridge(
     private val linker get() = FileLinker.getInstance(project)
     private val session get() = chat.session
     private val history get() = PromptHistory.getInstance(project)
+    private val branches get() = BranchGuard.getInstance(project)
     @Volatile private var unsubscribe: (() -> Unit)? = null
 
     /** Runs image work (decoding, scaling, reading files) off the EDT. Tests make it synchronous. */
@@ -132,6 +135,7 @@ class ChatBridge(
                 chat.unsentText = ""
                 remember(text)
                 chat.send(text, images)
+                branches.refresh()
             }
             "attachStart" -> {
                 val id = msg.str("id")?.takeIf(ID::matches) ?: return
@@ -191,6 +195,8 @@ class ChatBridge(
             "restart" -> session.restart()
             "openFile" -> msg.str("target")?.let { linker.open(it, msg.long("line")?.toInt()) }
             "showChanges" -> showChanges(chat)
+            "switchBranch" -> branches.switch(chat)
+            "dismissBranchBar" -> branches.dismiss(chat)
             "revertTo" -> msg.str("id")?.let(chat::revertTo)
             "openDiff" -> msg.str("toolUseId")?.let { id -> session.diffFor(id)?.let(linker::showDiff) }
             "openTurnDiff" -> turnDiffs(msg)?.let { diffs ->
@@ -477,6 +483,17 @@ class ChatBridge(
     override fun checkout(text: String) = post(buildJsonObject {
         put("type", "checkout")
         put("text", text)
+    }.toString())
+
+    override fun branchBar(bar: BranchBar?) = post(buildJsonObject {
+        put("type", "branchBar")
+        bar?.let {
+            put("home", it.home)
+            put("current", it.current)
+            it.blocked?.let { reason -> put("blocked", reason) }
+            put("switching", it.switching)
+            it.error?.let { error -> put("error", error) }
+        }
     }.toString())
 
     override fun pullRequest(pr: PullRequest?) = post(buildJsonObject {

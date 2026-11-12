@@ -1,6 +1,7 @@
 package tether.ui
 
 import tether.follow.CheckoutFollower
+import tether.ide.BranchGuard
 import tether.session.Chat
 import tether.session.ChatSpec
 import tether.session.Chats
@@ -50,14 +51,17 @@ class ChatTabs(private val project: Project, private val toolWindow: ToolWindow)
     }
 
     /**
-     * Makes [content]'s icon and the tool window's badge follow [chat]'s state (see [TabAttention]). The tool window
-     * draws icons only for contents that ask for them.
+     * Makes [content]'s icon and the tool window's badge follow [chat]'s state (see [TabAttention]), and has the
+     * [BranchGuard] check the branches again: a turn's end may have moved the checkout, and whether a chat is busy
+     * decides whether the others can switch it. The tool window draws icons only for contents that ask for them.
      */
     private fun showStatusIcon(content: Content, chat: Chat, closed: AtomicBoolean) {
         content.putUserData(ToolWindow.SHOW_CONTENT_ICON, true)
+        val branches = BranchGuard.getInstance(project)
         chat.onStatusChanged = { turnEnded ->
             ApplicationManager.getApplication().invokeLater({
                 if (!closed.get()) TabAttention.chatChanged(toolWindow, content, turnEnded)
+                branches.refresh()
             }, project.disposed)
         }
     }

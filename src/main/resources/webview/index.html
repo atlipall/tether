@@ -14,6 +14,11 @@
   <span id="usage" hidden tabindex="0" role="meter" aria-valuemin="0" aria-valuemax="100"><span id="usage-ring"></span><span id="usage-pct"></span></span>
   <button id="restart" hidden>Restart</button>
 </header>
+<section id="branch-bar" aria-label="Branch" hidden>
+  <span id="branch-bar-text" role="status"></span>
+  <span class="branch-bar-actions"><button id="branch-switch"></button><button id="branch-dismiss" class="link">Dismiss</button></span>
+  <span id="branch-bar-note" role="status" hidden></span>
+</section>
 <dialog id="model-dialog" aria-labelledby="model-dialog-title">
   <h2 id="model-dialog-title">Model</h2>
   <div id="model-options" class="choices" role="group" aria-labelledby="model-dialog-title"></div>

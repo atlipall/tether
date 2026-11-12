@@ -13,6 +13,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileTypes.FileTypeManager
+import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.roots.ProjectRootManager
@@ -26,6 +27,8 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.psi.search.FilenameIndex
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.vcsUtil.VcsUtil
 import java.io.File
 import java.io.IOException
@@ -38,14 +41,40 @@ class FileLinker(private val project: Project) {
 
     /**
      * Resolves a path Claude mentioned. Relative paths are tried against [cwd] (the chat's folder) first, then
-     * the project content roots. A file counts if it is project content or lies under [cwd].
+     * the project content roots, then as the end of a path anywhere in the project (see [onlyFileEndingWith]), so a
+     * bare `charts.ts:587` links too. A file counts if it is project content or lies under [cwd].
      */
     fun resolve(candidate: String, cwd: String? = null): ResolvedPath? {
         val match = pattern.matchEntire(candidate.trim()) ?: return null
         val raw = match.groupValues[1]
         val line = match.groupValues[2].toIntOrNull()
-        val file = findFile(raw, cwd) ?: return null
+        val file = findFile(raw, cwd) ?: onlyFileEndingWith(raw, cwd) ?: return null
         return ResolvedPath(file.url, line)
+    }
+
+    /**
+     * The one project file whose path ends with the relative path [raw] (`charts.ts`, `lib/ChartManager.ts`), found
+     * by name in the file index. When several match, those under [cwd] are preferred; if that still leaves more than
+     * one the path is ambiguous and nothing is returned, rather than a link to the wrong file. Returns null while
+     * the IDE is indexing.
+     */
+    private fun onlyFileEndingWith(raw: String, cwd: String?): VirtualFile? {
+        val relative = raw.removePrefix("./")
+        if (relative.isEmpty() || raw.startsWith("/") || hasParentSegment(relative)) return null
+        val suffix = "/$relative"
+        val matches = indexedFiles(relative.substringAfterLast('/')).filter { it.path.endsWith(suffix) }
+        val preferred = matches.filter { isUnder(it.path, cwd) }.ifEmpty { matches }
+        return preferred.singleOrNull()
+    }
+
+    /** The project content files called [name], from the file index; none while the IDE is indexing. */
+    private fun indexedFiles(name: String): List<VirtualFile> = ReadAction.compute<List<VirtualFile>, RuntimeException> {
+        if (project.isDisposed) return@compute emptyList()
+        try {
+            FilenameIndex.getVirtualFilesByName(name, GlobalSearchScope.projectScope(project)).filterNot { it.isDirectory }
+        } catch (_: IndexNotReadyException) {
+            emptyList()
+        }
     }
 
     /**
@@ -68,7 +97,7 @@ class FileLinker(private val project: Project) {
      */
     fun imageFileAt(candidate: String, cwd: String?): VirtualFile? {
         val raw = candidate.trim()
-        if (raw.isEmpty() || raw.length > MAX_IMAGE_PATH || SCHEME.containsMatchIn(raw) || raw.split('/', '\\').any { it == ".." }) return null
+        if (raw.isEmpty() || raw.length > MAX_IMAGE_PATH || SCHEME.containsMatchIn(raw) || hasParentSegment(raw)) return null
         val file = findFile(raw, cwd) ?: return null
         return file.takeIf { resolvesInside(it, cwd) && !it.isDirectory }
     }
@@ -211,6 +240,9 @@ class FileLinker(private val project: Project) {
         private val SCHEME = Regex("^[A-Za-z][A-Za-z0-9+.-]*:")
 
         fun getInstance(project: Project): FileLinker = project.service()
+
+        /** Whether [path] has a `..` segment, split on both slashes. */
+        private fun hasParentSegment(path: String): Boolean = path.split('/', '\\').any { it == ".." }
 
         /**
          * The diffs a turn's diff window steps through, the one at [clicked] and those of files the turn edited but

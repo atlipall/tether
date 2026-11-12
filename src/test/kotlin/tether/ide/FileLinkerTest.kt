@@ -27,6 +27,29 @@ class FileLinkerTest : BasePlatformTestCase() {
         assertEquals(ResolvedPath(file.url, 2), linker.resolve("src/foo.ts#L2-3"))
     }
 
+    fun testBareFileNameResolvesToTheOnlyFileWithThatName() {
+        val file = myFixture.addFileToProject("src/charts/charts.ts", "a\nb\n").virtualFile
+        assertEquals(ResolvedPath(file.url, 587), linker.resolve("charts.ts:587"))
+    }
+
+    fun testTrailingPathResolvesToTheOnlyFileEndingWithIt() {
+        val file = myFixture.addFileToProject("node/apiary/lib/ChartManager.ts", "x").virtualFile
+        myFixture.addFileToProject("node/apiary/src/ChartManager.ts", "x")
+        assertEquals(ResolvedPath(file.url, 177), linker.resolve("lib/ChartManager.ts:177"))
+    }
+
+    fun testAmbiguousFileNameDoesNotResolve() {
+        myFixture.addFileToProject("a/util.ts", "x")
+        myFixture.addFileToProject("b/util.ts", "x")
+        assertNull(linker.resolve("util.ts:3"))
+    }
+
+    fun testAmbiguousFileNamePrefersTheOneUnderTheChatFolder() {
+        myFixture.addFileToProject("a/util.ts", "x")
+        val inChat = myFixture.addFileToProject("wt/b/util.ts", "x").virtualFile
+        assertEquals(ResolvedPath(inChat.url, null), linker.resolve("util.ts", "$root/wt"))
+    }
+
     fun testUnknownOrDirectoryDoesNotResolve() {
         myFixture.addFileToProject("src/bar.ts", "x")
         assertNull(linker.resolve("src/missing.ts"))

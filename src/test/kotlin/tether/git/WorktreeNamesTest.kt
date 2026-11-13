@@ -35,4 +35,11 @@ class WorktreeNamesTest {
         assertEquals("wt-1", WorktreeNames.suggest(emptySet()))
         assertEquals("wt-3", WorktreeNames.suggest(setOf("wt-1", "wt-2", "other")))
     }
+
+    @Test fun typedSeparatorsBecomeDashes() {
+        assertEquals("my-new-feature", WorktreeNames.fromTyped("my new feature"))
+        assertEquals("a-b-c", WorktreeNames.fromTyped("a\tb\nc"))
+        assertEquals("feature-login-x", WorktreeNames.fromTyped("feature/login\\x"))
+        assertEquals("wt-1", WorktreeNames.fromTyped("wt-1"))
+    }
 }

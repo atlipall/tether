@@ -521,6 +521,17 @@ class ChatBridgeTest : BasePlatformTestCase() {
         assertEquals(null, posted.last().str("home"))
     }
 
+    fun testTheCurrentBranchIsPostedAndReplayedToAPageThatAttaches() {
+        bridge.handle("""{"type":"ready"}""")
+        chat.observeBranch("login-fix")
+        assertEquals(listOf("branch", "login-fix"), posted.last().let { listOf(it.str("type"), it.str("name")) })
+        posted.clear()
+        bridge.handle("""{"type":"ready"}""")
+        assertEquals("login-fix", posted.last { it.str("type") == "branch" }.str("name"))
+        chat.observeBranch(null)
+        assertEquals(null, posted.last().str("name"))
+    }
+
     fun testNoPullRequestIsPostedWithoutAnUrl() {
         bridge.handle("""{"type":"ready"}""")
         bridge.pullRequest(null)

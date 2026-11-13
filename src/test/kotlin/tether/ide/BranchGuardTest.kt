@@ -126,6 +126,35 @@ class BranchGuardTest : BasePlatformTestCase() {
         assertEquals(BranchBar("feature", "main"), chat.branchBar)
     }
 
+    fun testABranchTheChatsOwnTurnMovesToRaisesNoWarningAndIsShownAsCurrent() {
+        val dir = gitRepo() ?: return
+        val (chat, connection) = chatThatWorkedOn(dir, "main")
+        val (other, _) = chatThatWorkedOn(dir, "main")
+        chat.send("start a branch")
+        PlatformTestUtil.waitWithEventsDispatching("The message was not sent", { connection.userMessages().size == 2 }, 10)
+        git(dir, "checkout", "-q", "-b", "login-fix")
+        guard.refresh()
+        assertNull("the chat's own move, mid-turn, is no reason to warn", chat.branchBar)
+        assertEquals("login-fix", chat.homeBranch)
+        assertEquals("login-fix", chat.shownBranch)
+        assertEquals("another chat in the checkout is warned, and waits for the turn", BranchBar("main", "login-fix", BranchBar.OTHER_CHAT_BUSY), other.branchBar)
+        assertEquals("login-fix", other.shownBranch)
+        connection.emit(Fx.result())
+        guard.refresh()
+        assertNull(chat.branchBar)
+        assertEquals(BranchBar("main", "login-fix"), other.branchBar)
+    }
+
+    fun testTheCurrentBranchIsShownAndHiddenWhenDetached() {
+        val dir = gitRepo() ?: return
+        val chat = chats.open(ChatSpec.inProject(dir.path))
+        guard.refresh()
+        assertEquals("main", chat.shownBranch)
+        git(dir, "checkout", "-q", "--detach")
+        guard.refresh()
+        assertNull(chat.shownBranch)
+    }
+
     fun testANewChatThatHasNotWorkedHasNoBranchToGoBackTo() {
         val dir = gitRepo() ?: return
         val chat = chats.open(ChatSpec.inProject(dir.path))

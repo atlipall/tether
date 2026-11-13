@@ -13,23 +13,16 @@ data class BranchBar(
     val error: String? = null,
 ) {
     companion object {
-        const val THIS_CHAT_BUSY = "Switching waits until this chat's turn has finished."
         const val OTHER_CHAT_BUSY = "Switching waits until the other chat working in this checkout has finished."
 
         /**
          * The bar for a chat whose branch is [home] while its checkout is on [current]; null when they agree or either is
          * unknown (a chat that has not worked yet, detached HEAD, no repository). Switching is held back while
-         * [busyHere] (this chat is working) or [busyElsewhere] (another chat in the same checkout is): the branch would
-         * change under a running turn.
+         * [busyElsewhere] (another chat in the same checkout is working): the branch would change under its turn.
          */
-        fun of(home: String?, current: String?, busyHere: Boolean, busyElsewhere: Boolean): BranchBar? {
+        fun of(home: String?, current: String?, busyElsewhere: Boolean): BranchBar? {
             if (home == null || current == null || home == current) return null
-            val blocked = when {
-                busyHere -> THIS_CHAT_BUSY
-                busyElsewhere -> OTHER_CHAT_BUSY
-                else -> null
-            }
-            return BranchBar(home, current, blocked)
+            return BranchBar(home, current, OTHER_CHAT_BUSY.takeIf { busyElsewhere })
         }
 
         /** What the bar says when [changes] kept git from switching. */

@@ -15,6 +15,10 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 #usage.near, .usage-tip-state.near { color: var(--warn); }
 #usage.full, .usage-tip-state.full { color: var(--danger); }
 #checkout { color: var(--muted); font-size: .9em; overflow-wrap: anywhere; }
+#branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--muted); font-size: .9em; }
+#branch[hidden] { display: none; }
+#branch svg { width: 13px; height: 13px; flex: none; }
+#branch-name { max-width: 24em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #branch-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--warn) 12%, var(--bg)); }
 #branch-bar[hidden], #branch-bar-note[hidden] { display: none; }
 #branch-bar-text { flex: 1 1 16em; min-width: 0; overflow-wrap: anywhere; }

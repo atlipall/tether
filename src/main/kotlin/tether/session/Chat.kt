@@ -42,6 +42,9 @@ interface SessionView {
     /** The bar saying the checkout is on another branch than the chat's; null hides it. */
     fun branchBar(bar: BranchBar?) {}
 
+    /** The branch the chat's checkout is on now; null (detached, no repository) hides it. */
+    fun branch(name: String?) {}
+
     /** The GitHub pull request for the chat's branch; null hides the button that opens it. */
     fun pullRequest(pr: PullRequest?) {}
 
@@ -199,15 +202,20 @@ class Chat(
         private set
 
     /**
-     * The branch this chat works on: [cwd]'s branch when its last message went out or its last turn ended, so a branch
-     * Claude switched to or created during the turn becomes the chat's. Null until the chat has sent a message (or
-     * was restored with one), and kept as it was while HEAD is detached or a new worktree's folder is not known yet. Saved with the open chats.
+     * The branch this chat works on: [cwd]'s branch when its last message went out or its last turn ended, and whenever
+     * the branch is checked while the chat is [busy] ([observeBranch]), so a branch Claude switches to or creates is
+     * the chat's. Null until the chat has sent a message (or was restored with one), and kept as it was while HEAD is
+     * detached or a new worktree's folder is not known yet. Saved with the open chats.
      */
     @Volatile var homeBranch: String? = spec.homeBranch
         private set
 
     /** The branch bar the page shows, kept for a page that attaches later; see [showBranchBar]. */
     @Volatile var branchBar: BranchBar? = null
+        private set
+
+    /** The checkout's branch as the page shows it, kept for a page that attaches later; see [observeBranch]. */
+    @Volatile var shownBranch: String? = null
         private set
 
     /**
@@ -500,6 +508,7 @@ class Chat(
         synchronized(activityLock) { shownActivity }?.let(view::activity)
         checkoutText.takeIf { it.isNotEmpty() }?.let(view::checkout)
         branchBar?.let(view::branchBar)
+        shownBranch?.let(view::branch)
         pullRequest?.let(view::pullRequest)
         contextUsage?.let(view::context)
         modelChoice?.let(view::model)
@@ -566,10 +575,24 @@ class Chat(
         view?.branchBar(bar)
     }
 
-    /** Makes the branch [cwd] is on now this chat's [homeBranch]; detached HEAD and a predicted worktree folder keep it. */
-    private fun adoptBranch() {
+    /**
+     * The checkout is on [branch] now (null: detached HEAD or no repository). Shows it on the page and, while the chat
+     * is [busy] (a turn, a question waiting for the user, or background agents), makes it the chat's [homeBranch]: a
+     * move during its work is taken as its own. A new worktree's predicted folder belongs to another checkout, so
+     * nothing is shown or taken for it. EDT.
+     */
+    fun observeBranch(branch: String?) {
+        val shown = branch.takeUnless { cwdIsGuess }
+        if (busy) adoptBranch(shown)
+        if (shown == shownBranch) return
+        shownBranch = shown
+        view?.branch(shown)
+    }
+
+    /** Makes [branch] this chat's [homeBranch]; null (detached HEAD) and a predicted worktree folder keep it. Any thread. */
+    private fun adoptBranch(branch: String? = currentBranch(cwd)) {
         if (cwdIsGuess) return
-        currentBranch(cwd)?.let { homeBranch = it }
+        branch?.let { homeBranch = it }
     }
 
     fun showCheckout(text: String) {

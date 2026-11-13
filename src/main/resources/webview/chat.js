@@ -29,6 +29,8 @@
   const restartBtn = document.getElementById('restart');
   const statusEl = document.getElementById('status');
   const checkoutEl = document.getElementById('checkout');
+  const branchEl = document.getElementById('branch');
+  const branchNameEl = document.getElementById('branch-name');
   const branchBar = document.getElementById('branch-bar');
   const branchBarText = document.getElementById('branch-bar-text');
   const branchBarNote = document.getElementById('branch-bar-note');
@@ -205,6 +207,7 @@
         case 'history': history = Array.isArray(msg.entries) ? msg.entries : []; break;
         case 'commands': setCommands(Array.isArray(msg.items) ? msg.items : []); break;
         case 'checkout': setCheckout(msg.text); break;
+        case 'branch': setBranch(msg.name); break;
         case 'branchBar': setBranchBar(msg); break;
         case 'pullRequest': setPullRequest(msg); break;
         case 'usage': setUsage(msg); break;
@@ -1429,6 +1432,17 @@
   function setCheckout(text) {
     checkoutEl.textContent = typeof text === 'string' ? text : '';
     checkoutEl.hidden = !checkoutEl.textContent;
+  }
+
+  /**
+   * Shows the branch the checkout is on beside View changes and the pull request, or hides it when there is none
+   * (detached HEAD, no repository). Plain text only; the tooltip holds the whole name when it is cut short.
+   */
+  function setBranch(name) {
+    const shown = typeof name === 'string' && name !== '';
+    branchEl.hidden = !shown;
+    branchNameEl.textContent = shown ? name : '';
+    branchEl.title = shown ? `On branch ${name}` : '';
   }
 
   /**

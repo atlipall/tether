@@ -496,6 +496,11 @@ class ChatBridge(
         }
     }.toString())
 
+    override fun branch(name: String?) = post(buildJsonObject {
+        put("type", "branch")
+        name?.let { put("name", it) }
+    }.toString())
+
     override fun pullRequest(pr: PullRequest?) = post(buildJsonObject {
         put("type", "pullRequest")
         pr?.let {

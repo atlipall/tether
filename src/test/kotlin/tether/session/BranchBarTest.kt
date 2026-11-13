@@ -6,15 +6,14 @@ import org.junit.Test
 
 class BranchBarTest {
     @Test fun showsOnlyWhenBothBranchesAreKnownAndDiffer() {
-        assertNull(BranchBar.of(null, "main", busyHere = false, busyElsewhere = false))
-        assertNull(BranchBar.of("main", null, busyHere = false, busyElsewhere = false))
-        assertNull(BranchBar.of("main", "main", busyHere = false, busyElsewhere = false))
-        assertEquals(BranchBar("feature", "main"), BranchBar.of("feature", "main", busyHere = false, busyElsewhere = false))
+        assertNull(BranchBar.of(null, "main", busyElsewhere = false))
+        assertNull(BranchBar.of("main", null, busyElsewhere = false))
+        assertNull(BranchBar.of("main", "main", busyElsewhere = false))
+        assertEquals(BranchBar("feature", "main"), BranchBar.of("feature", "main", busyElsewhere = false))
     }
 
-    @Test fun switchingWaitsWhileAChatWorksInTheCheckout() {
-        assertEquals(BranchBar.THIS_CHAT_BUSY, BranchBar.of("feature", "main", busyHere = true, busyElsewhere = true)?.blocked)
-        assertEquals(BranchBar.OTHER_CHAT_BUSY, BranchBar.of("feature", "main", busyHere = false, busyElsewhere = true)?.blocked)
+    @Test fun switchingWaitsWhileAnotherChatWorksInTheCheckout() {
+        assertEquals(BranchBar.OTHER_CHAT_BUSY, BranchBar.of("feature", "main", busyElsewhere = true)?.blocked)
     }
 
     @Test fun theUncommittedNoteCountsAndNamesTheFirstChanges() {

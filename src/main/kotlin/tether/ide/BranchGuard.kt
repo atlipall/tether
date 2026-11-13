@@ -24,10 +24,13 @@ import com.intellij.openapi.wm.IdeFrame
 
 /**
  * Warns a chat whose checkout is on another branch than the one it worked on ([Chat.homeBranch]), as when a tab is
- * selected after another chat's work switched the shared checkout, and offers to switch back. Every open chat's
- * [BranchBar] is worked out again when a tab is selected or closed, a chat's status changes or it sends a message, the
- * IDE comes back to the front, or a checkout's HEAD file changes. The tool window and the chat page call [refresh] for
- * their events; the guard listens for the last two itself. EDT only.
+ * selected after another chat's work switched the shared checkout, and offers to switch back. A busy chat takes on
+ * whatever branch its checkout moves to ([Chat.observeBranch]), so its own branch moves never warn it. Each chat also
+ * shows the branch its checkout is on now.
+ *
+ * Every open chat's branch and [BranchBar] are worked out again when a tab is selected or closed, a chat's status
+ * changes or it sends a message, the IDE comes back to the front, or a checkout's HEAD file changes. The tool window
+ * and the chat page call [refresh] for their events; the guard listens for the last two itself. EDT only.
  */
 @Service(Service.Level.PROJECT)
 class BranchGuard(private val project: Project) : Disposable {
@@ -68,12 +71,19 @@ class BranchGuard(private val project: Project) : Disposable {
         })
     }
 
-    /** Shows each open chat the bar it needs now, and forgets the notes of closed chats and of branches that moved on. */
+    /**
+     * Tells each open chat its checkout's branch ([Chat.observeBranch]) and shows it the bar it needs now; forgets the
+     * notes of closed chats and of branches that moved on.
+     */
     fun refresh() {
         val open = chats.all()
         notes.keys.retainAll(open.map { it.id }.toSet())
         val checkouts = Checkouts(open)
-        open.forEach { it.showBranchBar(barFor(it, checkouts)) }
+        for (chat in open) {
+            val current = branchOf(chat.cwd)
+            chat.observeBranch(current)
+            chat.showBranchBar(barFor(chat, current, checkouts))
+        }
     }
 
     /** Hides [chat]'s bar until its branch or the checkout's changes. */
@@ -88,8 +98,9 @@ class BranchGuard(private val project: Project) : Disposable {
      * still in editors count as uncommitted changes. Refused, as the bar then says, when anything is uncommitted.
      */
     fun switch(chat: Chat) {
+        if (chat.busy) return
         val checkouts = Checkouts(chats.all())
-        val bar = barFor(chat, checkouts) ?: return
+        val bar = barFor(chat, branchOf(chat.cwd), checkouts) ?: return
         if (bar.blocked != null || bar.switching) return
         val root = checkouts.rootOf(chat) ?: return
         FileDocumentManager.getInstance().saveAllDocuments()
@@ -126,8 +137,9 @@ class BranchGuard(private val project: Project) : Disposable {
         }
     }
 
-    private fun barFor(chat: Chat, checkouts: Checkouts): BranchBar? {
-        val bar = BranchBar.of(chat.homeBranch, branchOf(chat.cwd), chat.busy, checkouts.busyBesides(chat))
+    /** [chat]'s bar while its checkout is on [current], with what the user did with it for these branches. */
+    private fun barFor(chat: Chat, current: String?, checkouts: Checkouts): BranchBar? {
+        val bar = BranchBar.of(chat.homeBranch, current, checkouts.busyBesides(chat))
         val note = notes[chat.id]?.takeIf { bar != null && it.home == bar.home && it.current == bar.current }
         if (note == null) notes.remove(chat.id)
         if (bar == null || note?.dismissed == true) return null

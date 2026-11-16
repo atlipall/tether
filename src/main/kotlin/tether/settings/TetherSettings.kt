@@ -26,6 +26,8 @@ class TetherSettings : SimplePersistentStateComponent<TetherSettings.State>(Stat
          * permission like Claude's own edits (applies to chats started or restarted after).
          */
         var ideTools by property(true)
+        /** The chat's font size as a percentage of the IDE's UI font size; 100 follows the IDE. */
+        var chatFontPercent by property(DEFAULT_CHAT_FONT_PERCENT)
         /** After each of Claude's edits, the IDE checks the file and tells Claude about errors in it. */
         var checkEdits by property(true)
         /** Command line of the ACP agent new chats offer besides Claude; empty offers none. */
@@ -39,6 +41,13 @@ class TetherSettings : SimplePersistentStateComponent<TetherSettings.State>(Stat
     }
 
     companion object {
+        /** The chat font percentage that matches the IDE's UI font size. */
+        const val DEFAULT_CHAT_FONT_PERCENT = 100
+        /** The percentages the settings page offers for the chat font. */
+        val CHAT_FONT_PERCENTS = 50..200
+        /** How far one step of the settings page's percentage spinner moves. */
+        const val CHAT_FONT_PERCENT_STEP = 10
+
         fun getInstance(): TetherSettings = service()
     }
 }

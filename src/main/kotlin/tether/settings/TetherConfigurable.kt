@@ -7,24 +7,40 @@ import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.RightGap
+import com.intellij.ui.dsl.builder.bindIntValue
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
+import tether.ui.Theme
 
 class TetherConfigurable : BoundConfigurable("Tether") {
     private val state get() = TetherSettings.getInstance().state
 
-    /** Saves the form and refreshes each open project's checkout follower; only projects whose chat tool window is open have one. */
+    /**
+     * Saves the form, re-themes open chats when the chat font size changed so it shows at once, and refreshes each open
+     * project's checkout follower; only projects whose chat tool window is open have one.
+     */
     override fun apply() {
+        val fontPercentBefore = state.chatFontPercent
         super.apply()
+        if (state.chatFontPercent != fontPercentBefore) Theme.changed()
         ProjectManager.getInstance().openProjects.forEach { project ->
             project.serviceIfCreated<CheckoutFollower>()?.refresh()
         }
     }
 
-    /** The page in three groups: what applies to every agent, then Claude's own options, then the ACP agent's. */
+    /** The page in four groups: how the chat looks, what applies to every agent, then Claude's own options, then the ACP agent's. */
     override fun createPanel(): DialogPanel = panel {
+        group("Appearance") {
+            row("Chat font size:") {
+                spinner(TetherSettings.CHAT_FONT_PERCENTS, TetherSettings.CHAT_FONT_PERCENT_STEP)
+                    .bindIntValue({ state.chatFontPercent }, { state.chatFontPercent = it })
+                    .gap(RightGap.SMALL)
+                label("%")
+            }.rowComment("Of the IDE's UI font size. 100% matches the rest of the IDE.")
+        }
         group("All Agents") {
             row {
                 checkBox("IDE follows the selected chat's checkout")

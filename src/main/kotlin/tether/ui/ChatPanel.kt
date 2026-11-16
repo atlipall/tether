@@ -84,11 +84,15 @@ class ChatPanel(private val project: Project, private val chat: Chat, parent: Di
         browser.loadHTML(WebAssets.page())
     }
 
-    /** Re-sends the theme when the IDE's look and feel or editor colour scheme changes, until this panel is disposed. */
+    /**
+     * Re-sends the theme when the IDE's look and feel, editor colour scheme or Tether's chat font size changes, until
+     * this panel is disposed.
+     */
     private fun followTheme() {
         val bus = ApplicationManager.getApplication().messageBus.connect(this)
         bus.subscribe(LafManagerListener.TOPIC, LafManagerListener { post(Theme.message()) })
         bus.subscribe(EditorColorsManager.TOPIC, EditorColorsListener { post(Theme.message()) })
+        bus.subscribe(Theme.TOPIC, Theme.Listener { post(Theme.message()) })
     }
 
     private fun post(json: String) {

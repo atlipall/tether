@@ -73,6 +73,7 @@ object BugReports {
         ).forEach { (name, on) -> add("$name ${if (on) "on" else "off"}") }
         settings.defaultMode?.takeIf { it.isNotBlank() }?.let { add("default mode $it") }
         if (!settings.extraArgs.isNullOrBlank()) add("extra CLI arguments set")
+        if (settings.chatFontPercent != TetherSettings.DEFAULT_CHAT_FONT_PERCENT) add("chat font ${settings.chatFontPercent}%")
     }.joinToString(", ")
 
     /** Tether's recent entries in the IDE log; empty when it can't be read. */

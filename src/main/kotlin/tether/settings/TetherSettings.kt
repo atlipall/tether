@@ -30,6 +30,8 @@ class TetherSettings : SimplePersistentStateComponent<TetherSettings.State>(Stat
         var chatFontPercent by property(DEFAULT_CHAT_FONT_PERCENT)
         /** After each of Claude's edits, the IDE checks the file and tells Claude about errors in it. */
         var checkEdits by property(true)
+        /** While the IDE is in the background, its Dock or taskbar icon asks for attention when a chat waits or finishes. */
+        var requestAppAttention by property(true)
         /** Command line of the ACP agent new chats offer besides Claude; empty offers none. */
         var acpCommand by string("hermes acp")
         /** The agent last selected in a new chat (`claude` or `acp`); the next new chat starts with it. */

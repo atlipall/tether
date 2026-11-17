@@ -52,6 +52,11 @@ class TetherConfigurable : BoundConfigurable("Tether") {
                     .bindSelected({ state.attachEditorContext }, { state.attachEditorContext = it })
                     .comment("Tells the agent the file, caret line, selection and enclosing function of the editor you last used. Never the code itself.")
             }
+            row {
+                checkBox("Bounce the IDE's icon when a chat needs you")
+                    .bindSelected({ state.requestAppAttention }, { state.requestAppAttention = it })
+                    .comment("While the IDE is in the background, its Dock icon bounces until you return when a chat asks a question or for permission, and once when a reply finishes. On Windows and Linux, the taskbar button flashes instead.")
+            }
         }
         group("Claude") {
             row("Claude binary:") {

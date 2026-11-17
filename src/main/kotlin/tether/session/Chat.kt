@@ -357,7 +357,7 @@ class Chat(
                 onCwdChanged?.invoke()
             }
             val branchMoved = followBranch()
-            if (turnEnded || branchMoved) refreshPullRequest()
+            if (turnEnded || branchMoved && currentBranch(cwd) != pullRequestBranch) refreshPullRequest()
         }
     }
 
@@ -536,16 +536,24 @@ class Chat(
     private val pullRequestLock = Any()
 
     /**
-     * Looks up the pull request for [cwd]'s branch in the background and shows it when it changed; a failed lookup
-     * keeps what is shown. Outside a branch (detached, not a repository) there is none to look up. Called when the
-     * chat opens, when a turn ends (Claude may have opened one) and when the branch changes. Any thread; returns at once.
+     * The branch the latest [refreshPullRequest] looked up. A branch move, seen by the session or by [observeBranch],
+     * looks up again only when the checkout has left it, so each move is looked up once.
      */
-    fun refreshPullRequest() {
+    @Volatile private var pullRequestBranch: String? = null
+
+    /**
+     * Looks up the pull request for [branch], [cwd]'s branch, in the background and shows it when it changed; a failed lookup
+     * keeps what is shown. Outside a branch (detached, not a repository) there is none to look up. Called when the
+     * chat opens, when a turn ends (Claude may have opened one) and when the branch changes, whether seen by the
+     * session ([followBranch]) or by the [BranchGuard][tether.ide.BranchGuard] ([observeBranch]). Any thread; returns
+     * at once.
+     */
+    fun refreshPullRequest(branch: String? = currentBranch(cwd)) {
         val find = findPullRequest ?: return
         if (cwdIsGuess) return
         val dir = cwd
         val lookup = pullRequestLookups.incrementAndGet()
-        val branch = currentBranch(dir)
+        pullRequestBranch = branch
         if (branch == null) {
             show(lookup, null)
             return
@@ -578,12 +586,14 @@ class Chat(
     /**
      * The checkout is on [branch] now (null: detached HEAD or no repository). Shows it on the page and, while the chat
      * is [busy] (a turn, a question waiting for the user, or background agents), makes it the chat's [homeBranch]: a
-     * move during its work is taken as its own. A new worktree's predicted folder belongs to another checkout, so
-     * nothing is shown or taken for it. EDT.
+     * move during its work is taken as its own. Looks up the pull request again when the branch is not the one last
+     * looked up for. A new worktree's predicted folder belongs to another checkout, so nothing is shown or taken for
+     * it. EDT.
      */
     fun observeBranch(branch: String?) {
         val shown = branch.takeUnless { cwdIsGuess }
         if (busy) adoptBranch(shown)
+        if (shown != pullRequestBranch) refreshPullRequest(shown)
         if (shown == shownBranch) return
         shownBranch = shown
         view?.branch(shown)

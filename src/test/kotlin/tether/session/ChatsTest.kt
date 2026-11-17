@@ -671,6 +671,37 @@ class ChatsTest : BasePlatformTestCase() {
         }
     }
 
+    fun testObservingAnotherBranchLooksUpItsPullRequestOnceAndDetachedHeadClearsIt() {
+        val repo = gitRepo() ?: return
+        val asked = mutableListOf<String>()
+        val opened = tether.git.PullRequest(7, "https://github.com/o/r/pull/7", "Seven", tether.git.PullRequest.Status.OPEN)
+        val answer = tether.git.PullRequestLookup.Found(opened)
+        val chat = Chat(
+            id = 97, spec = ChatSpec.inProject(repo.path), history = emptyList(), connector = { FakeConnection() },
+            editNote = { null },
+            findPullRequest = { _, branch -> asked += branch; answer },
+        )
+        val view = object : SessionView by RecordingView() {
+            val pullRequests = mutableListOf<tether.git.PullRequest?>()
+            override fun pullRequest(pr: tether.git.PullRequest?) { pullRequests += pr }
+        }
+        try {
+            chat.refreshPullRequest()
+            chat.observeBranch("main")
+            assertEquals("the branch looked up at open is not looked up again", listOf("main"), asked)
+            git(repo, "checkout", "-q", "-b", "login-fix")
+            chat.observeBranch("login-fix")
+            chat.observeBranch("login-fix")
+            assertEquals(listOf("main", "login-fix"), asked)
+            chat.attach(view)
+            chat.observeBranch(null)
+            assertEquals(listOf(opened, null), view.pullRequests)
+            assertEquals(listOf("main", "login-fix"), asked)
+        } finally {
+            chat.dispose()
+        }
+    }
+
     fun testContextUsageReachesTheViewAndIsReplayedOnAttach() {
         val chat = chats.open(ChatSpec.inProject(root)).also { it.start() }
         val conn = connections.single()

@@ -21,6 +21,8 @@ import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.openapi.wm.IdeFrame
+import com.intellij.util.concurrency.AppExecutorUtil
+import java.util.concurrent.TimeUnit
 
 /**
  * Warns a chat whose checkout is on another branch than the one it worked on ([Chat.homeBranch]), as when a tab is
@@ -30,7 +32,10 @@ import com.intellij.openapi.wm.IdeFrame
  *
  * Every open chat's branch and [BranchBar] are worked out again when a tab is selected or closed, a chat's status
  * changes or it sends a message, the IDE comes back to the front, or a checkout's HEAD file changes. The tool window
- * and the chat page call [refresh] for their events; the guard listens for the last two itself. EDT only.
+ * and the chat page call [refresh] for their events; the guard listens for the last two itself. HEAD file events do
+ * not always reach the IDE (a switch in a terminal, a checkout the IDE does not watch), so while the IDE is in front
+ * the guard also reads the chats' HEAD files every [POLL_SECONDS]. EDT only, apart from the poll's timer, which hands
+ * over to the EDT.
  */
 @Service(Service.Level.PROJECT)
 class BranchGuard(private val project: Project) : Disposable {
@@ -59,6 +64,20 @@ class BranchGuard(private val project: Project) : Disposable {
 
     /** Checkouts being switched now: their chats show the switch in progress and offer no other. */
     private val switching = HashSet<String>()
+
+    /**
+     * Runs [refresh] every [POLL_SECONDS] while the IDE is in front; cancelled with the guard. Queues it with
+     * `invokeLater` rather than [onEdt], which tests run inline on the timer's thread.
+     */
+    private val poll = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(
+        ::refreshWhileActive, POLL_SECONDS, POLL_SECONDS, TimeUnit.SECONDS,
+    )
+
+    /** The poll's timer thread: queues [refresh] on the EDT while the IDE is in front. */
+    private fun refreshWhileActive() {
+        val application = ApplicationManager.getApplication()
+        if (application.isActive) application.invokeLater(::refresh, project.disposed)
+    }
 
     init {
         ApplicationManager.getApplication().messageBus.connect(this).subscribe(ApplicationActivationListener.TOPIC, object : ApplicationActivationListener {
@@ -149,9 +168,12 @@ class BranchGuard(private val project: Project) : Disposable {
     /** A checkout's HEAD file: `.git/HEAD`, or a linked worktree's `.git/worktrees/<name>/HEAD`. */
     private fun isHeadChange(event: VFileEvent): Boolean = HEAD_FILE.containsMatchIn(event.path)
 
-    override fun dispose() {}
+    override fun dispose() {
+        poll.cancel(false)
+    }
 
     companion object {
+        private const val POLL_SECONDS = 2L
         private val HEAD_FILE = Regex("/\\.git(/worktrees/[^/]+)?/HEAD$")
 
         fun getInstance(project: Project): BranchGuard = project.service()

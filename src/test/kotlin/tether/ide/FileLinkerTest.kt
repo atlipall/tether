@@ -219,6 +219,19 @@ class FileLinkerTest : BasePlatformTestCase() {
         }
     }
 
+    fun testTheTurnDiffWindowOpensAtTheClickedFile() {
+        val dir = Files.createTempDirectory("turn-diff").toFile().canonicalFile
+        VfsRootAccess.allowRootAccess(testRootDisposable, dir.path)
+        try {
+            val diffs = listOf("a.txt", "b.txt", "c.txt").map { FileDiff(File(dir, it).apply { writeText("now") }.path, "before") }
+            val chain = linker.turnDiffChain(diffs, 2)
+            assertEquals(2, chain.index)
+            assertEquals(3, chain.requests.size)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
     fun testTheTurnDiffWindowStepsOnlyThroughEditedFilesAndTheClickedOne() {
         val a = FileDiff("/p/a.txt", "a")
         val b = FileDiff("/p/b.txt", "", isNew = true)

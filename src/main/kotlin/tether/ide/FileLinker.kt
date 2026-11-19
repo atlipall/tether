@@ -187,10 +187,16 @@ class FileLinker(private val project: Project) {
             OpenFileDescriptor(project, it).navigate(true)
             return
         }
+        DiffManager.getInstance().showDiff(project, turnDiffChain(diffs, index), DiffDialogHints.DEFAULT)
+    }
+
+    /**
+     * The diff chain [showTurnDiffs] opens: the turn's [steppableDiffs], starting at the file at [index]. The start is
+     * passed to the constructor, since [SimpleDiffRequestChain] ignores a later `index` assignment.
+     */
+    internal fun turnDiffChain(diffs: List<FileDiff>, index: Int): SimpleDiffRequestChain {
         val (shown, shownIndex) = steppableDiffs(diffs, index)
-        val chain = SimpleDiffRequestChain(shown.map { request(it, "This turn", "Before this turn") })
-        chain.index = shownIndex
-        DiffManager.getInstance().showDiff(project, chain, DiffDialogHints.DEFAULT)
+        return SimpleDiffRequestChain(shown.map { request(it, "This turn", "Before this turn") }, shownIndex)
     }
 
     /**

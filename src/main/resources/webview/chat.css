@@ -60,6 +60,7 @@ img.openable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 #log-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 #log { flex: 1; overflow-y: auto; padding: 8px 10px; }
 #to-bottom { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border-radius: 50%; color: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+#to-bottom[hidden] { display: none; }
 #to-bottom .glyph { width: 14px; height: 14px; }
 #to-bottom:hover { filter: brightness(1.15); }
 #composer { padding: 8px 8px 4px; }

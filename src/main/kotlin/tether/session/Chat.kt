@@ -70,7 +70,7 @@ interface SessionView {
     fun processes(processes: List<BackgroundProcess>) {}
 }
 
-/** What "Revert to here" takes back to before a message, as the user chose it. */
+/** What "Revert to Before This Message" takes back to before a message, as the user chose it. */
 enum class RevertChoice(val label: String, val files: Boolean, val conversation: Boolean) {
     FILES_AND_CONVERSATION("Files and Conversation", true, true),
     FILES("Files Only", true, false),

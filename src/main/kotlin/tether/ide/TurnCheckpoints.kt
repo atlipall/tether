@@ -98,7 +98,8 @@ class TurnCheckpoints(private val project: Project) : Checkpoints {
     /**
      * Asks what to revert and reverts the files when chosen. Refuses while the chat is busy, both before the dialog and
      * again after it: a turn's edits in flight would land after the revert, and a turn can open while the dialog is up
-     * (a background agent finishing), so the user stops it (and sees what it did) first.
+     * (a background agent finishing), so the user stops it (and sees what it did) first. Cancel is the dialog's default
+     * button, so pressing Return by habit reverts nothing.
      */
     override fun revert(chat: Chat, item: ChatItem.UserText, conversation: Boolean): RevertChoice? {
         val title = "Revert to Before This Message"
@@ -119,9 +120,10 @@ class TurnCheckpoints(private val project: Project) : Checkpoints {
             } else {
                 append("The files can't be reverted: their folder isn't tracked by Local History, the message is too old, or its checkpoint isn't ready yet.\n\n")
             }
-            if (conversation) append("Conversation: Claude forgets this message and everything after it, and the message goes back into the input box.")
+            if (conversation) append("Conversation: ${chat.agent.name} forgets this message and everything after it, and the message goes back into the input box.")
         }
-        val answer = Messages.showDialog(project, text, title, (choices.map { it.label } + "Cancel").toTypedArray(), 0, Messages.getWarningIcon())
+        val buttons = choices.map { it.label } + Messages.getCancelButton()
+        val answer = Messages.showDialog(project, text, title, buttons.toTypedArray(), buttons.lastIndex, Messages.getWarningIcon())
         val choice = choices.getOrNull(answer) ?: return null
         if (chat.busy) return stillWorking(chat.agent.name)
         if (choice.files && !revertFiles(chat, checkpoint!!, dir!!)) return null

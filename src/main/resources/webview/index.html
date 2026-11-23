@@ -13,7 +13,7 @@
   <span id="checkout" hidden></span>
   <span id="status" role="status"></span>
   <span id="usage" hidden tabindex="0" role="meter" aria-valuemin="0" aria-valuemax="100"><span id="usage-ring"></span><span id="usage-pct"></span></span>
-  <button id="restart" hidden>Restart</button>
+  <button id="restart" title="Start the agent again and carry on with this chat" hidden>Restart Session</button>
 </header>
 <section id="branch-bar" aria-label="Branch" hidden>
   <span id="branch-bar-text" role="status"></span>
@@ -31,7 +31,7 @@
 </dialog>
 <div id="log-wrap">
   <main id="log"><div id="log-content"></div></main>
-  <button id="to-bottom" hidden aria-label="Scroll to the latest" title="Jump to the latest and keep following">↓</button>
+  <button id="to-bottom" hidden aria-label="Scroll to the latest" title="Jump to the latest and keep following"><span class="glyph glyph-arrow-down" aria-hidden="true"></span></button>
 </div>
 <div id="queue" hidden></div>
 <section id="tasks" aria-label="Agents and background processes" hidden></section>
@@ -53,7 +53,7 @@
       <div id="mode-menu" class="picker-menu" role="menu" aria-label="Permission mode" hidden></div>
     </div>
     <button id="attach" class="composer-tool" title="Attach images" aria-label="Attach images"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" d="M8 3v10M3 8h10"/></svg></button>
-    <span id="input-hint"><span id="hint-commands" hidden>/ for commands · </span>@ for files · Shift+Enter for a new line</span>
+    <span id="input-hint"><span id="hint-commands" hidden>/ for commands · </span>@ for files · <span id="hint-newline">Shift+Enter for a new line</span></span>
     <div id="composer-choices">
       <div id="agent-picker" class="picker">
         <button id="agent" class="chip" title="Agent for this chat" aria-label="Agent" aria-haspopup="menu" aria-expanded="false" aria-controls="agent-menu" disabled><span id="agent-label">Agent</span></button>

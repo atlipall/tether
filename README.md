@@ -53,7 +53,7 @@ already has (e.g. your Claude Pro subscription). The plugin never reads, stores 
   which asks the selected chat to fix the problems on that line. In the test runner, **Send Failures to Tether**
   (right-click) puts the selected failed tests' messages and stack traces into the message box; in a run console,
   **Send to Tether** puts the selected output (or all of it) there.
-- **Revert to before a message.** Each message sent in this IDE session gets a **Revert to here** link (on hover).
+- **Revert to before a message.** Each message sent in this IDE session gets a **Revert…** link.
   It asks what to revert: **Files and Conversation**, **Files Only** or **Conversation Only**. Files go back to how
   they were before that message went out, using the IDE's Local History (undoable from there; only files Local
   History tracks, so not excluded folders such as worktrees by default). The conversation goes back too: Claude
@@ -70,7 +70,7 @@ already has (e.g. your Claude Pro subscription). The plugin never reads, stores 
   Option+Delete, Control+A/E/K/Y/T on macOS; Ctrl+arrows, Home/End and Ctrl+Backspace elsewhere). Type `/` at the
   start for the agent's commands and skills, or `@` for project files (as Go to File finds them; an empty `@` offers
   the open files). Right after sending, Esc stops the turn and brings the text back (Undo brings it back without
-  stopping anything); once the turn has stopped, a second Esc opens **Revert to here** for that message, when it
+  stopping anything); once the turn has stopped, a second Esc opens **Revert…** for that message, when it
   offers one. A message that went into the queue is taken back with its row's Edit instead. Otherwise Esc in an
   empty box stops a working turn. Unsent text and images survive a reload of the chat page; in a chat that has
   started, the text also survives an IDE restart.

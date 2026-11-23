@@ -366,7 +366,7 @@ window.runComposerTests = async function () {
     receive({ type: 'activity', phase: null });
     assert(key('Escape'), 'The second Escape is handled');
     const asks = sent('revertTo');
-    assert(asks.length === 1 && asks[0].id === 'u2', `Revert to here for the last message: ${JSON.stringify(asks)}`);
+    assert(asks.length === 1 && asks[0].id === 'u2', `Revert… for the last message: ${JSON.stringify(asks)}`);
   });
 
   await test('the rewind that follows does not put the text in twice', () => {

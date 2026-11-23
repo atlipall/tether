@@ -142,7 +142,7 @@ class WebAssetsTest {
         assertTrue(html.indexOf("</main>") in 0 until html.indexOf("<div id=\"activity\""))
         assertFalse(page.contains("id=\"stop\""))
         assertFalse(page.contains("getElementById('stop')"))
-        assertTrue(page.contains("<button id=\"restart\" hidden>Restart</button>"))
+        assertTrue(Regex("<button id=\"restart\"[^>]* hidden>Restart Session</button>").containsMatchIn(page))
         assertTrue(page.contains("case 'activity': setActivity(msg); break;"))
         assertTrue(page.contains("document.getElementById('activity-stop')"))
         assertTrue(page.contains("activityStop.addEventListener('click', () => send({ type: 'interrupt' }));"))

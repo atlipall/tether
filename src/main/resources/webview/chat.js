@@ -26,6 +26,7 @@
   const activityLabel = document.getElementById('activity-label');
   const activitySecs = document.getElementById('activity-secs');
   const activityStop = document.getElementById('activity-stop');
+  const newlineHint = document.getElementById('hint-newline');
   const restartBtn = document.getElementById('restart');
   const statusEl = document.getElementById('status');
   const checkoutEl = document.getElementById('checkout');
@@ -377,7 +378,7 @@
     el.dataset.text = typeof item.text === 'string' ? item.text.trim() : '';
     if (item.revertable) {
       el.append(h('button', { class: 'link revert', 'data-action': 'revertTo', 'data-id': item.id,
-        title: 'Go back to before this message: files, conversation or both (asks first)' }, 'Revert to here'));
+        title: 'Revert to before this message: files, conversation or both (asks first)' }, 'Revert…'));
     }
     const images = Array.isArray(item.images) ? item.images : [];
     if (images.length) el.append(h('div', { class: 'thumbs' }, ...images.map((src, index) => openableImage(src, '[image]', { item: item.id, index }))));
@@ -644,13 +645,19 @@
 
   /** Tool rows and turn file lists the user has expanded, by item id, so a re-render of the same item keeps them open. */
   const expandedTools = new Set();
-  const STATUS_ICON = { done: '\u2713', error: '\u2717', denied: '\u2298' };
+  /** The glyph of each finished status (see [glyph]); running shows a spinner instead. */
+  const STATUS_ICON = { done: 'check', error: 'cross', denied: 'blocked' };
+  /** [name]'s glyph, or nothing for a status without one. */
+  const statusGlyph = (name) => name ? glyph(name) : '';
   /** The icon cell of a tool or agent row (a spinner while running), named for screen readers by [TOOL_STATUS]. */
   const statusIcon = (status) => {
     const label = TOOL_STATUS[status] || null;
-    const icon = status === 'running' ? h('span', { class: 'spin' }) : (STATUS_ICON[status] || '');
+    const icon = status === 'running' ? h('span', { class: 'spin' }) : statusGlyph(STATUS_ICON[status]);
     return h('span', { class: 'tool-icon', role: label ? 'img' : null, 'aria-label': label }, icon);
   };
+
+  /** One of the page's line icons, drawn in the text colour by the CSS class .glyph-[name]; screen readers skip it. */
+  const glyph = (name) => h('span', { class: 'glyph glyph-' + name, 'aria-hidden': 'true' });
 
   /**
    * The disclosure button of an expandable row. The row itself stays a plain element (clicking anywhere on it still
@@ -661,7 +668,7 @@
   /** Shows or hides the details right after [row]: a tool row's .tool-detail, or an agent card's .agent-body. */
   function setRowExpanded(row, open) {
     const toggle = row.querySelector('.tool-toggle');
-    if (toggle) { toggle.setAttribute('aria-expanded', open ? 'true' : 'false'); toggle.textContent = open ? '\u25BE' : '\u25B8'; }
+    if (toggle) { toggle.setAttribute('aria-expanded', open ? 'true' : 'false'); toggle.replaceChildren(glyph(open ? 'chevron-down' : 'chevron-right')); }
     const detail = row.nextElementSibling;
     if (detail && (detail.classList.contains('tool-detail') || detail.classList.contains('agent-body'))) detail.hidden = !open;
   }
@@ -708,10 +715,11 @@
     }
     return h('div', { class: 'perm' },
       h('span', {}, 'Allow ' + t.name + '?'),
-      h('button', { 'data-action': 'allow', 'data-req': id }, 'Allow'),
-      h('button', { 'data-action': 'allowSession', 'data-req': id }, 'Allow for session'),
-      h('input', { class: 'deny-reason', placeholder: 'Reason (optional)' }),
-      h('button', { 'data-action': 'deny', 'data-req': id }, 'Deny'));
+      h('button', { class: 'primary', 'data-action': 'allow', 'data-req': id }, 'Allow'),
+      h('button', { 'data-action': 'allowSession', 'data-req': id }, 'Allow for Session'),
+      h('span', { class: 'perm-deny' },
+        h('input', { class: 'deny-reason', placeholder: 'Reason (optional)', 'aria-label': 'Reason for denying', title: 'Sent with Deny; press ' + keyName('Enter') + ' to deny' }),
+        h('button', { 'data-action': 'deny', 'data-req': id }, 'Deny')));
   }
 
   /** A map keyed by model text: a question like "__proto__" stays an ordinary key. */
@@ -863,7 +871,7 @@
     if (state !== 'running' && a && typeof a.taskId === 'string') stopping.delete(a.taskId);
     const side = h('span', { class: 'tool-side' }, agentSide(a, state), ' ');
     if (pinned && state === 'running' && a && typeof a.taskId === 'string' && a.taskId) side.append(stopButton(a.taskId, 'this agent'), ' ');
-    if (pinned && state !== 'running') side.append(h('button', { class: 'link task-dismiss', 'data-action': 'dismissTask', 'data-id': t.id, 'aria-label': 'Dismiss', title: 'Dismiss' }, '\u2715'), ' ');
+    if (pinned && state !== 'running') side.append(h('button', { class: 'link task-dismiss', 'data-action': 'dismissTask', 'data-id': t.id, 'aria-label': 'Dismiss', title: 'Dismiss' }, glyph('close')), ' ');
     side.append(rowToggle(name));
     const head = h('div', { class: 'tool-row agent-head expandable', 'data-id': t.id },
       agentIcon(state),
@@ -946,7 +954,7 @@
       agentIcon(state),
       h('span', { class: 'tool-name' }, agentLabel(t)),
       h('span', { class: 'tool-desc' }, desc),
-      h('span', { class: 'tool-side', 'aria-hidden': 'true' }, '\u2193')));
+      h('span', { class: 'tool-side' }, glyph('arrow-down'))));
   }
 
   /** Brings pinned card [id] back if dismissed, opens it and scrolls the task rows to it. */
@@ -1259,7 +1267,7 @@
     agentPicker.button.title = msg.locked ? 'This chat runs ' + agentName + '. Start a new chat for another agent.' : 'Agent for this chat';
     if (changed) { mode = ''; setModes([]); clearModel(); setCommands([]); }
     placeholder = 'Message ' + agentName;
-    activityStop.title = 'Stop ' + agentName + ' (Esc)';
+    labelShortcuts();
     setSuggestion(changed ? '' : suggestion);
   }
 
@@ -1368,7 +1376,7 @@
   /** Only offered into an empty box while idle; typing, sending or a new turn takes it away. */
   function setSuggestion(text) {
     suggestion = idle && !input.value ? text : '';
-    input.placeholder = suggestion ? suggestion + '   (Tab to use)' : placeholder;
+    input.placeholder = suggestion ? suggestion + '   (' + keyName('Tab') + ' to use)' : placeholder;
   }
 
   function acceptSuggestion() {
@@ -1600,7 +1608,7 @@
   function addTile(id, name) {
     const tile = h('div', { class: 'tile loading', title: name },
       h('span', { class: 'img-alt' }, '…'),
-      h('button', { class: 'tile-x', 'data-action': 'detach', 'data-id': id, title: 'Remove image' }, '×'));
+      h('button', { class: 'tile-x', 'data-action': 'detach', 'data-id': id, title: 'Remove image', 'aria-label': 'Remove image' }, glyph('close')));
     pending.set(id, { el: tile, ready: false });
     attachEl.append(tile);
     attachEl.hidden = false;
@@ -1675,6 +1683,19 @@
     input.focus();
   }
 
+  /** Whether the page runs on a Mac, where text keys follow macOS and shortcuts are written with key symbols. */
+  const mac = /Mac/.test(navigator.platform);
+  const MAC_KEYS = { Enter: '\u21A9', Esc: '\u238B', Tab: '\u21E5', 'Shift+Enter': '\u21E7\u21A9' };
+  /** How [key] ("Enter", "Esc", "Tab" or "Shift+Enter") is written on this platform: ⇧↩ on a Mac, Shift+Enter elsewhere. */
+  const keyName = (key) => mac ? MAC_KEYS[key] || key : key;
+
+  /** Writes the keyboard shortcuts in the composer's hint and tooltips the way this platform does. */
+  function labelShortcuts() {
+    newlineHint.textContent = keyName('Shift+Enter') + ' for a new line';
+    sendBtn.title = 'Send (' + keyName('Enter') + ')';
+    activityStop.title = 'Stop ' + agentName + ' (' + keyName('Esc') + ')';
+  }
+
   /** "High" for "high": how an effort level reads on the composer's model chip and in the picker. */
   const capitalize = (word) => word.charAt(0).toUpperCase() + word.slice(1);
 
@@ -1687,9 +1708,11 @@
     s.setProperty('--bg', t.bg); s.setProperty('--fg', t.fg); s.setProperty('--muted', t.muted);
     s.setProperty('--border', t.border); s.setProperty('--accent', t.accent); s.setProperty('--code-bg', t.codeBg);
     s.setProperty('--font', '"' + t.font + '", system-ui, sans-serif'); s.setProperty('--font-size', t.fontSize + 'px');
-    s.setProperty('--add', t.dark ? '#2f5a3a' : '#d7f5dd'); s.setProperty('--del', t.dark ? '#5a2f2f' : '#f9d7d7');
-    s.setProperty('--ok', t.dark ? '#5fb865' : '#2e7d32');
-    s.setProperty('--warn', t.dark ? '#d29922' : '#9a6700'); s.setProperty('--danger', t.danger);
+    s.setProperty('--primary-bg', t.primaryBg); s.setProperty('--primary-fg', t.primaryFg);
+    s.setProperty('--sel-bg', t.selectionBg); s.setProperty('--sel-fg', t.selectionFg);
+    s.setProperty('--add', t.add); s.setProperty('--del', t.del); s.setProperty('--ok', t.ok);
+    s.setProperty('--warn', t.warn); s.setProperty('--warn-bg', t.warnBg); s.setProperty('--warn-border', t.warnBorder);
+    s.setProperty('--danger', t.danger);
     s.setProperty('color-scheme', t.dark ? 'dark' : 'light');
     fitInput();
   }
@@ -1737,7 +1760,7 @@
     return true;
   }
 
-  /** The "Revert to here" link of the message [text] became, if it is the newest one in the chat and offers one. */
+  /** The "Revert…" link of the message [text] became, if it is the newest one in the chat and offers one. */
   function revertLinkFor(text) {
     const newest = [...logContent.querySelectorAll(':scope > .msg.user')].pop();
     if (!newest || newest.dataset.text !== text.trim()) return null;
@@ -1745,7 +1768,7 @@
   }
 
   /**
-   * Opens "Revert to here" for the brought-back message through its own link; the dialog asks what to revert, so
+   * Opens "Revert…" for the brought-back message through its own link; the dialog asks what to revert, so
    * nothing changes without the user's choice. Waits while a turn is still stopping (Escape can ask again), and does
    * nothing for a message that can't be reverted.
    */
@@ -1892,7 +1915,8 @@
   input.addEventListener('input', onTyped);
   input.addEventListener('blur', saveUnsentText);
   window.addEventListener('pagehide', saveUnsentText);
-  window.TextKeys.install(input);
+  window.TextKeys.install(input, mac);
+  labelShortcuts();
   const completion = window.Completion.install(input, document.getElementById('completion'),
     document.getElementById('completion-status'), [commandCompletion, fileCompletion]);
   fitInput();
@@ -2030,8 +2054,17 @@
   /** Whether the user has text selected, so a click ends a selection rather than acting. */
   const selecting = () => !!(window.getSelection && window.getSelection().toString());
 
+  /** Return in a permission card's reason box denies with that reason, as its Deny button would. */
+  function denyWithReason(e) {
+    const deny = e.target.closest('.perm-deny').querySelector('[data-action="deny"]');
+    if (!deny || !trusted.has(deny)) return;
+    e.preventDefault();
+    deny.click();
+  }
+
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('deny-reason') && !window.TextKeys.isComposing(e)) { denyWithReason(e); return; }
     if (isOpenable(e.target)) { e.preventDefault(); openImage(e.target); return; }
     const fileRow = e.target.closest && e.target.closest('.turn-files .tool-row');
     if (fileRow && e.target === fileRow && trusted.has(fileRow)) { e.preventDefault(); openTurnDiff(fileRow); return; }

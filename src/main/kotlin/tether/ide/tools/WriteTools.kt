@@ -13,7 +13,8 @@ private const val WRITE_TIMEOUT_MS = 45_000L
 private const val MAX_RECHECKED = 5
 
 /** The tools that change files: each call asks for permission like Claude's own edits. */
-internal fun writeTools(host: ChatIdeHost): List<McpTool> = listOf(ApplyFixTool(host), RenameTool(host), MoveFileTool(host))
+internal fun writeTools(host: ChatIdeHost): List<McpTool> =
+    listOf(ApplyFixTool(host), RenameTool(host), MoveFileTool(host), ScratchFileTool(host))
 
 /** Base of the tools that change files: [change] does it; the answer adds the errors the IDE then reports. */
 private abstract class WriteTool(host: ChatIdeHost, args: List<Arg>) : IdeTool(host, args) {

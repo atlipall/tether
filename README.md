@@ -47,6 +47,10 @@ already has (e.g. your Claude Pro subscription). The plugin never reads, stores 
   rename and move refactorings, updating every reference and import in the chat's checkout. These change files, so
   they ask for permission like Claude's own edits; they run without dialogs (conflicts are reported to Claude), save
   what they changed, report the errors left, and can be undone in the IDE.
+- **Claude can make scratch files.** `mcp__tether__create_scratch_file` creates an IDE scratch file (Scratches and
+  Consoles, outside the project and its repository) in the language its extension names, with the text Claude
+  gives, and opens it in the editor. A name already taken gets a numbered one. It asks for permission like
+  Claude's own edits.
 - **Claude's edits are checked.** After each `Edit`/`Write`, the IDE checks the file and tells Claude about any
   errors in the same turn, so it fixes them without being asked. Clean files add nothing.
 - **Fix with Tether / Send to Tether.** Alt+Enter on any highlighted error or warning offers **Fix with Tether**,

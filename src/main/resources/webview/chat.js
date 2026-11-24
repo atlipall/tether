@@ -706,6 +706,16 @@
     if (images.length) el.append(h('div', { class: 'tool-images' }, ...images.map((src, index) => openableImage(src, '[image]', { tool: t.id, index }))));
   }
 
+  /**
+   * A keydown handler for a card's text box: Return presses [button], as a dialog's default button would, unless Shift
+   * is held or an input method is composing. A disabled button ignores the press.
+   */
+  const returnPresses = (button) => (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || window.TextKeys.isComposing(e)) return;
+    e.preventDefault();
+    button.click();
+  };
+
   /** Page-created permission actions: agent-advertised choices or Claude's existing allow and deny controls. */
   function permissionCard(t) {
     const id = t.permissionRequestId;
@@ -713,13 +723,14 @@
       return h('div', { class: 'perm' }, h('span', {}, t.name),
         ...t.choices.map((choice) => h('button', { 'data-action': 'choose', 'data-req': id, 'data-option': choice.id }, choice.label)));
     }
+    const deny = h('button', { 'data-action': 'deny', 'data-req': id }, 'Deny');
+    const reason = h('input', { class: 'deny-reason', placeholder: 'Reason (optional)', 'aria-label': 'Reason for denying', title: 'Sent with Deny; press ' + keyName('Enter') + ' to deny' });
+    reason.addEventListener('keydown', returnPresses(deny));
     return h('div', { class: 'perm' },
       h('span', {}, 'Allow ' + t.name + '?'),
       h('button', { class: 'primary', 'data-action': 'allow', 'data-req': id }, 'Allow'),
       h('button', { 'data-action': 'allowSession', 'data-req': id }, 'Allow for Session'),
-      h('span', { class: 'perm-deny' },
-        h('input', { class: 'deny-reason', placeholder: 'Reason (optional)', 'aria-label': 'Reason for denying', title: 'Sent with Deny; press ' + keyName('Enter') + ' to deny' }),
-        h('button', { 'data-action': 'deny', 'data-req': id }, 'Deny')));
+      h('span', { class: 'perm-deny' }, reason, deny));
   }
 
   /** A map keyed by model text: a question like "__proto__" stays an ordinary key. */
@@ -733,14 +744,15 @@
     const id = t.permissionRequestId;
     const qs = t.question.questions;
     const picks = qs.map(() => ({ labels: new Set(), other: '' }));
-    const submitBtn = h('button', { class: 'q-submit', disabled: true }, 'Submit');
+    const submitBtn = h('button', { class: 'primary q-submit', disabled: true }, 'Submit');
     const answered = (i) => picks[i].labels.size > 0 || picks[i].other.trim() !== '';
     const refresh = () => { if (picks.every((_, i) => answered(i))) submitBtn.removeAttribute('disabled'); else submitBtn.setAttribute('disabled', ''); };
     const blocks = qs.map((q, i) => {
       const multi = q.multiSelect === true;
       const preview = h('pre', { class: 'q-preview', hidden: true });
       const showPreview = (o) => { preview.textContent = o.preview ? clip(o.preview) : ''; preview.hidden = !o.preview; };
-      const other = h('input', { class: 'q-other', placeholder: 'Other…', maxlength: 2000 });
+      const other = h('input', { class: 'q-other', placeholder: 'Other…', maxlength: 2000, 'aria-label': 'Other answer', title: 'Press ' + keyName('Enter') + ' to submit' });
+      other.addEventListener('keydown', returnPresses(submitBtn));
       const buttons = [];
       const paint = () => buttons.forEach(({ b, label }) => b.setAttribute('aria-checked', picks[i].labels.has(label) ? 'true' : 'false'));
       for (const o of q.options) {
@@ -2054,17 +2066,8 @@
   /** Whether the user has text selected, so a click ends a selection rather than acting. */
   const selecting = () => !!(window.getSelection && window.getSelection().toString());
 
-  /** Return in a permission card's reason box denies with that reason, as its Deny button would. */
-  function denyWithReason(e) {
-    const deny = e.target.closest('.perm-deny').querySelector('[data-action="deny"]');
-    if (!deny || !trusted.has(deny)) return;
-    e.preventDefault();
-    deny.click();
-  }
-
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('deny-reason') && !window.TextKeys.isComposing(e)) { denyWithReason(e); return; }
     if (isOpenable(e.target)) { e.preventDefault(); openImage(e.target); return; }
     const fileRow = e.target.closest && e.target.closest('.turn-files .tool-row');
     if (fileRow && e.target === fileRow && trusted.has(fileRow)) { e.preventDefault(); openTurnDiff(fileRow); return; }

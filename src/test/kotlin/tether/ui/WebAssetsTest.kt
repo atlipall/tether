@@ -236,6 +236,14 @@ class WebAssetsTest {
         assertTrue(page.contains("h('button', { 'data-action': 'skipQuestion', 'data-req': id }, 'Skip')"))
     }
 
+    @Test fun returnInACardsTextBoxPressesItsButton() {
+        val page = WebAssets.page()
+        assertTrue(page.contains("if (e.key !== 'Enter' || e.shiftKey || window.TextKeys.isComposing(e)) return;"))
+        assertTrue(page.contains("h('button', { class: 'primary q-submit', disabled: true }, 'Submit')"))
+        assertTrue(page.contains("other.addEventListener('keydown', returnPresses(submitBtn));"))
+        assertTrue(page.contains("reason.addEventListener('keydown', returnPresses(deny));"))
+    }
+
     @Test fun toolCallsRenderAsCompactRows() {
         val js = WebAssets.page()
         assertTrue(js.contains("class: 'tool-row'"))

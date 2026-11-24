@@ -1,16 +1,8 @@
 package tether.session
 
-import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import junit.framework.TestCase
 
-class PromptHistoryTest : BasePlatformTestCase() {
-    private val history get() = PromptHistory.getInstance(project)
-
-    /** Project services persist between tests, so the history starts empty. */
-    override fun setUp() {
-        super.setUp()
-        history.clear()
-    }
-
+class PromptHistoryTest : TestCase() {
     fun testAppendKeepsOrderAndSkipsImmediateRepeat() = assertEquals(
         listOf("a", "b", "a"),
         listOf("a", "b", "b", "a").fold(emptyList<String>()) { acc, t -> PromptHistory.append(acc, t) })
@@ -24,7 +16,8 @@ class PromptHistoryTest : BasePlatformTestCase() {
         assertEquals("m101", next.last())
     }
 
-    fun testAddStoresInStateAndNotifiesSubscribers() {
+    fun testAddStoresAndNotifiesSubscribers() {
+        val history = PromptHistory()
         val seen = mutableListOf<List<String>>()
         val unsubscribe = history.subscribe { seen += it }
         history.add("one")
@@ -34,11 +27,18 @@ class PromptHistoryTest : BasePlatformTestCase() {
         history.add("three")
         assertEquals(listOf("one", "two", "three"), history.entries())
         assertEquals(listOf(listOf("one"), listOf("one", "two")), seen)
-        assertEquals(listOf("one", "two", "three"), history.state.entries.toList())
     }
 
-    fun testLoadStateRestoresEntries() {
-        history.loadState(PromptHistory.State().apply { entries = mutableListOf("x", "y") })
-        assertEquals(listOf("x", "y"), history.entries())
+    fun testReplaceSwapsTheEntriesAndNotifiesOnlyOnChange() {
+        val history = PromptHistory(listOf("old"))
+        val seen = mutableListOf<List<String>>()
+        history.subscribe { seen += it }
+        history.replace(listOf("a", "a", "b"))
+        history.replace(listOf("a", "b"))
+        assertEquals(listOf("a", "b"), history.entries())
+        assertEquals(listOf(listOf("a", "b")), seen)
     }
+
+    fun testStartsWithTheInitialMessagesAppendedAsSent() =
+        assertEquals(listOf("x", "y"), PromptHistory(listOf("x", "x", " ", "y")).entries())
 }

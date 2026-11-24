@@ -33,7 +33,6 @@ import tether.session.FileDiff
 import tether.session.PermissionDecision
 import tether.session.QuestionAnswer
 import tether.session.QueuedMessage
-import tether.session.PromptHistory
 import tether.session.SessionState
 import tether.session.SessionView
 import tether.session.toJson
@@ -72,7 +71,6 @@ class ChatBridge(
 ) : SessionView {
     private val linker get() = FileLinker.getInstance(project)
     private val session get() = chat.session
-    private val history get() = PromptHistory.getInstance(project)
     private val branches get() = BranchGuard.getInstance(project)
     @Volatile private var unsubscribe: (() -> Unit)? = null
 
@@ -122,8 +120,8 @@ class ChatBridge(
         when (msg.str("type")) {
             "ready" -> {
                 post(Theme.message())
-                post(historyMessage(history.entries()))
-                if (unsubscribe == null) unsubscribe = history.subscribe { post(historyMessage(it)) }
+                post(historyMessage(chat.promptHistory.entries()))
+                if (unsubscribe == null) unsubscribe = chat.promptHistory.subscribe { post(historyMessage(it)) }
                 dropUnfinishedUploads()
                 chat.attach(this)
                 restoreComposer()
@@ -270,7 +268,7 @@ class ChatBridge(
 
     /** Adds [text] to the input history, unless it is blank (history keeps text only) or the chat is dead ([Chat.send] ignores it). */
     private fun remember(text: String) {
-        if (session.state != SessionState.DEAD && text.isNotBlank()) history.add(text)
+        if (session.state != SessionState.DEAD && text.isNotBlank()) chat.promptHistory.add(text)
     }
 
     /**

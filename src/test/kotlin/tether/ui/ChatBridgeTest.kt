@@ -15,7 +15,6 @@ import tether.session.BranchBar
 import tether.session.Chat
 import tether.session.ChatSpec
 import tether.session.Chats
-import tether.session.PromptHistory
 import tether.session.SessionState
 import tether.settings.TetherSettings
 import tether.testutil.FakeConnection
@@ -60,7 +59,6 @@ class ChatBridgeTest : BasePlatformTestCase() {
     /** Starts with no editor open, unless a test opens one. */
     override fun setUp() {
         super.setUp()
-        PromptHistory.getInstance(project).clear()
         chats.closeAll()
         chats.commandCatalog.clear()
         manager.openFiles.forEach(manager::closeFile)
@@ -104,7 +102,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
     private fun types() = posted.map { it.str("type") }
 
     fun testReadySendsThemeHistoryResetAndState() {
-        PromptHistory.getInstance(project).add("earlier")
+        chat.promptHistory.add("earlier")
         bridge.handle("""{"type":"ready"}""")
         assertEquals(listOf("theme", "history", "reset", "agent", "modes", "state"), types())
         assertEquals(listOf(JsonPrimitive("earlier")), posted[1].arr("entries")!!.toList())
@@ -459,16 +457,18 @@ class ChatBridgeTest : BasePlatformTestCase() {
         assertNull(posted.single().obj("paths")!!["lib/z.txt"])
     }
 
-    fun testSentTextIsRememberedAndBroadcastToOtherTabs() {
+    fun testSentTextIsRememberedInItsOwnChatOnly() {
         val other = chats.open(ChatSpec.inProject(root))
         val otherPosted = mutableListOf<JsonObject>()
         val otherBridge = ChatBridge(project, other) { otherPosted += parseJsonObject(it)!! }
         try {
             otherBridge.handle("""{"type":"ready"}""")
+            bridge.handle("""{"type":"ready"}""")
             bridge.handle("""{"type":"send","text":"hello"}""")
-            assertEquals(listOf("hello"), PromptHistory.getInstance(project).entries())
-            val last = otherPosted.last { it.str("type") == "history" }
-            assertEquals(listOf(JsonPrimitive("hello")), last.arr("entries")!!.toList())
+            assertEquals(listOf("hello"), chat.promptHistory.entries())
+            assertEquals(listOf(JsonPrimitive("hello")), posted.last { it.str("type") == "history" }.arr("entries")!!.toList())
+            assertTrue(other.promptHistory.entries().isEmpty())
+            assertTrue(otherPosted.single { it.str("type") == "history" }.arr("entries")!!.isEmpty())
         } finally {
             otherBridge.dispose()
         }
@@ -479,7 +479,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
         connections[0].exit(1, "boom")
         assertEquals(SessionState.DEAD, chat.session.state)
         bridge.handle("""{"type":"send","text":"ignored"}""")
-        assertTrue(PromptHistory.getInstance(project).entries().isEmpty())
+        assertTrue(chat.promptHistory.entries().isEmpty())
         assertTrue(connections[0].userMessages().isEmpty())
     }
 
@@ -544,7 +544,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
         bridge.handle("""{"type":"ready"}""")
         bridge.dispose()
         val before = posted.size
-        PromptHistory.getInstance(project).add("later")
+        chat.promptHistory.add("later")
         assertEquals(before, posted.size)
     }
 
@@ -597,7 +597,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
         val bubble = posted.last { it.str("type") == "item" && it.obj("item")!!.str("kind") == "user" }.obj("item")!!
         assertEquals(listOf(JsonPrimitive("data:image/png;base64,${TestImages.RED_PNG_BASE64}")), bubble.arr("images")!!.toList())
         assertEquals(0, chat.attachments.size)
-        assertEquals(listOf("what color?"), PromptHistory.getInstance(project).entries())
+        assertEquals(listOf("what color?"), chat.promptHistory.entries())
     }
 
     private fun openImage(fields: String) = bridge.handle("""{"type":"openImage",$fields}""")
@@ -676,7 +676,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
         upload("p1", TestImages.BLUE_PNG_BASE64)
         bridge.handle("""{"type":"send","text":"","attachments":["p1"]}""")
         assertEquals(listOf(listOf(TestImages.BLUE_PNG_BASE64)), connections[0].userImages())
-        assertTrue(PromptHistory.getInstance(project).entries().isEmpty())
+        assertTrue(chat.promptHistory.entries().isEmpty())
     }
 
     fun testBlankMessageWithUnknownAttachmentsIsIgnored() {

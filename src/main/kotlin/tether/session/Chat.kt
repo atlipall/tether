@@ -224,6 +224,9 @@ class Chat(
      */
     @Volatile var unsentText: String = spec.unsentText.orEmpty()
 
+    /** What this chat's message box recalls with Up and Down: its own sent messages, starting with the resumed ones. */
+    val promptHistory = PromptHistory(userTexts(history))
+
     /** True while a turn is running or waiting for the user, or background agents are working. */
     val busy: Boolean get() = synchronized(activityLock) { sessionActivity != null }
 
@@ -334,8 +337,13 @@ class Chat(
             }
         }
 
+        /**
+         * A replayed (ACP) transcript item. A replayed user message can arrive several times as its text grows, so
+         * [promptHistory] is rebuilt from the items rather than added to.
+         */
         override fun onHistoryItem(item: ChatItem) {
-            synchronized(lock) { items[item.id] = item }
+            val all = synchronized(lock) { items[item.id] = item; items.values.toList() }
+            if (item is ChatItem.UserText) promptHistory.replace(userTexts(all))
             view?.item(item)
         }
 
@@ -835,3 +843,6 @@ class Chat(
         val CLAUDE_MODES = PermissionMode.entries.map { Choice(it.cli, it.label) }
     }
 }
+
+/** The text of each user message in [items], in order. */
+private fun userTexts(items: Collection<ChatItem>): List<String> = items.filterIsInstance<ChatItem.UserText>().map { it.text }

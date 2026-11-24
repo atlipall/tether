@@ -1,45 +1,35 @@
 package tether.session
 
-import com.intellij.openapi.components.BaseState
-import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.SimplePersistentStateComponent
-import com.intellij.openapi.components.State
-import com.intellij.openapi.components.Storage
-import com.intellij.openapi.components.StoragePathMacros
-import com.intellij.openapi.components.service
-import com.intellij.openapi.project.Project
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Messages the user sent in this project, oldest first, shared by every chat tab and kept across restarts. The state
- * name is from before the rename to Tether; changing it would drop saved prompt history.
+ * The messages the user sent in one chat, oldest first, which Up and Down in its message box step through. A resumed
+ * chat starts with the messages its transcript shows ([initial]); each chat keeps its own, so tabs don't share them.
  */
-@Service(Service.Level.PROJECT)
-@State(name = "ClaudeChatPromptHistory", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
-class PromptHistory : SimplePersistentStateComponent<PromptHistory.State>(State()) {
-    class State : BaseState() {
-        var entries by list<String>()
-    }
+class PromptHistory(initial: List<String> = emptyList()) {
+    private var entries: List<String> = initial.fold(emptyList(), ::append)
 
     private val listeners = CopyOnWriteArrayList<(List<String>) -> Unit>()
 
-    fun entries(): List<String> = synchronized(this) { state.entries.toList() }
+    fun entries(): List<String> = synchronized(this) { entries }
 
     /** Appends [text] (see [append]) and tells subscribers when the list changed. */
-    fun add(text: String) {
+    fun add(text: String) = update { append(it, text) }
+
+    /**
+     * Replaces every entry with [texts], under the same rules as [add], and tells subscribers when the list changed.
+     * For a transcript that arrives after the chat opens, such as an ACP agent replaying a resumed session.
+     */
+    fun replace(texts: List<String>) = update { texts.fold(emptyList(), ::append) }
+
+    private fun update(change: (List<String>) -> List<String>) {
         val updated = synchronized(this) {
-            val current = state.entries.toList()
-            val next = append(current, text)
-            if (next == current) return
-            state.entries = next.toMutableList()
+            val next = change(entries)
+            if (next == entries) return
+            entries = next
             next
         }
         listeners.forEach { it(updated) }
-    }
-
-    fun clear() {
-        synchronized(this) { state.entries = mutableListOf() }
-        listeners.forEach { it(emptyList()) }
     }
 
     /** [listener] gets the full list after every change, on the caller's thread. Returns the unsubscribe function. */
@@ -56,7 +46,5 @@ class PromptHistory : SimplePersistentStateComponent<PromptHistory.State>(State(
             if (text.isBlank() || entries.lastOrNull() == text) return entries
             return (entries + text).takeLast(cap)
         }
-
-        fun getInstance(project: Project): PromptHistory = project.service()
     }
 }

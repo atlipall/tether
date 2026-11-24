@@ -282,6 +282,26 @@ class ChatsTest : BasePlatformTestCase() {
         assertTrue(launches.isEmpty())
     }
 
+    fun testARestoredAcpChatRecallsItsReplayedMessagesWhole() {
+        openChats.loadState(OpenChats.State().apply {
+            chats = mutableListOf(OpenChats.Entry().apply {
+                sessionId = "saved-acp"
+                cwd = File(home, "restored").apply { mkdirs() }.path
+                agentId = "acp"
+            })
+        })
+        val (spec, transcript) = chats.restorable().single()
+        val chat = chats.open(spec, transcript)
+        val (_, connection) = acpLaunches.single()
+        completeAcp(connection, "initialize", """{"protocolVersion":1,"agentCapabilities":{"loadSession":true}}""")
+        fun userChunk(messageId: String, text: String) =
+            """{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"saved-acp","update":{"sessionUpdate":"user_message_chunk","messageId":"$messageId","content":{"type":"text","text":"$text"}}}}"""
+        connection.emit(userChunk("first", "earlier "), userChunk("first", "question"), userChunk("second", "follow-up"))
+        completeAcp(connection, "session/load", "{}")
+
+        assertEquals(listOf("earlier question", "follow-up"), chat.promptHistory.entries())
+    }
+
     fun testAcpRestoreDoesNotReadASameIdClaudeTranscript() {
         val folder = File(home, "restored").apply { mkdirs() }.path
         assertTrue(File(folder).isDirectory)
@@ -359,6 +379,15 @@ class ChatsTest : BasePlatformTestCase() {
         assertEquals(1, chats.archiveAll(archivable))
         assertEquals(listOf("shared-id"), chats.store.list(root, archived = true).map { it.id })
         assertEquals("shared-id", acp.session.sessionId)
+    }
+
+    fun testAResumedChatRecallsOnlyItsOwnSentMessages() {
+        pastSession("native-id", "Claude history")
+        val resumed = chats.open(ChatSpec.resume(root, chats.store.list(root).single()))
+        val fresh = chats.open(ChatSpec.inProject(root))
+
+        assertEquals(listOf("Claude history"), resumed.promptHistory.entries())
+        assertTrue(fresh.promptHistory.entries().isEmpty())
     }
 
     fun testAResumedClaudeSessionIgnoresTheLastDraftsAcpAgent() {

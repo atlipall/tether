@@ -61,12 +61,14 @@ class ChatBridgeTest : BasePlatformTestCase() {
         super.setUp()
         chats.closeAll()
         chats.commandCatalog.clear()
+        chats.modelCatalog.clear()
         manager.openFiles.forEach(manager::closeFile)
         savedAttach = settings.attachEditorContext
         settings.attachEditorContext = true
         savedSchedule = contextService.schedule
         contextService.schedule = { it.run() }
         chats.connector = { FakeConnection().also { connections += it } }
+        chats.probeConnector = { FakeConnection() }
         savedAcpConnector = chats.acpConnector
         chats.acpConnector = { command, _ -> FakeConnection().also { acp += command to it } }
         savedAcpCommand = settings.acpCommand

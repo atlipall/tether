@@ -29,6 +29,7 @@ class CheckoutFollowerTest : BasePlatformTestCase() {
         chats.closeAll()
         connections.clear()
         chats.connector = { FakeConnection().also { connections += it } }
+        chats.probeConnector = { FakeConnection() }
         holder.scopes = emptyArray()
         SearchDefaults.forgetSaved()
         savedScopeName = FindSettings.getInstance().defaultScopeName

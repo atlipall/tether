@@ -5,6 +5,7 @@ import tether.cli.arr
 import tether.cli.obj
 import tether.cli.str
 import kotlinx.serialization.json.jsonObject
+import tether.cli.ModelChoice
 import tether.cli.PermissionMode
 import tether.cli.SessionLaunch
 import tether.context.EditorContextService
@@ -38,6 +39,7 @@ class ChatsTest : BasePlatformTestCase() {
     private val launches = mutableListOf<SessionLaunch>()
     private val connections = mutableListOf<FakeConnection>()
     private val acpLaunches = mutableListOf<Pair<List<String>, FakeConnection>>()
+    private val probes = mutableListOf<Pair<SessionLaunch, FakeConnection>>()
     private lateinit var home: File
     private val chats get() = Chats.getInstance(project)
     private val root get() = ProjectRootManager.getInstance(project).contentRoots.first().path
@@ -57,6 +59,8 @@ class ChatsTest : BasePlatformTestCase() {
         override fun suggestion(text: String) { suggestions += text }
         val queues = mutableListOf<List<QueuedMessage>>()
         override fun queue(messages: List<QueuedMessage>) { queues += messages }
+        val models = mutableListOf<ModelChoice>()
+        override fun model(choice: ModelChoice) { models += choice }
     }
 
     private val settings get() = TetherSettings.getInstance().state
@@ -92,6 +96,8 @@ class ChatsTest : BasePlatformTestCase() {
         contextService.forgetCache()
         home = Files.createTempDirectory("claude-home").toFile()
         chats.connector = { launch -> launches += launch; FakeConnection().also { connections += it } }
+        chats.modelCatalog.clear()
+        chats.probeConnector = { launch -> FakeConnection().also { probes += launch to it } }
         savedAcpConnector = chats.acpConnector
         chats.acpConnector = { command, _ -> FakeConnection().also { acpLaunches += command to it } }
         savedAcpCommand = settings.acpCommand
@@ -133,6 +139,44 @@ class ChatsTest : BasePlatformTestCase() {
         .getDeclaredMethod("openSessions", Chats::class.java)
         .apply { isAccessible = true }
         .invoke(NewChatPopup, chats)
+
+    fun testAClaudeDraftShowsTheModelAndEffortBeforeItStarts() {
+        val draft = chats.open(ChatSpec.inProject(root))
+        val view = RecordingView().also(draft::attach)
+        assertTrue("a draft starts no session", connections.isEmpty())
+        val (launch, probe) = probes.single()
+        assertEquals(chats.projectDir, launch.cwd)
+        probe.emit(Fx.initResponseWithModels(probe.lastRequestId("initialize")))
+        probe.emit(Fx.settingsResponse(probe.lastRequestId("get_settings"), "claude-opus-5-5", "high"))
+        assertEquals(Triple("default", "Opus 5.5", "high"), view.models.last().let { Triple(it.model, it.modelName, it.effort) })
+
+        draft.setModel("sonnet")
+        draft.setEffort("low")
+        assertEquals("sonnet" to "low", view.models.last().let { it.model to it.effort })
+
+        val next = chats.open(ChatSpec.inProject(root))
+        val nextView = RecordingView().also(next::attach)
+        assertEquals("the next draft needs no probe", 1, probes.size)
+        assertEquals("default" to "high", nextView.models.last().let { it.model to it.effort })
+
+        draft.start()
+        assertEquals("the draft's picks start the session", "sonnet" to "low", launches.last().let { it.model to it.effort })
+    }
+
+    fun testAResumedChatStartsNoProbe() {
+        chats.open(ChatSpec.inProject(root).copy(resumeId = "s-old"), Transcript(emptyList(), null, null, null))
+        assertTrue(probes.isEmpty())
+    }
+
+    fun testAnAcpDraftShowsNoModel() {
+        settings.lastAgent = "acp"
+        val draft = chats.open(ChatSpec.inProject(root))
+        assertFalse(draft.agent.native)
+        val view = RecordingView().also(draft::attach)
+        assertTrue(probes.isEmpty())
+        chats.modelCatalog.remember(ModelChoice(emptyList(), "x", null), pickedNothing = true)
+        assertTrue(view.models.isEmpty())
+    }
 
     fun testOpenChatsWithASessionAreRememberedOnceRestoreHasRun() {
         openChats.loadState(OpenChats.State())

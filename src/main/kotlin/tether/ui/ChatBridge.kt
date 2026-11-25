@@ -183,8 +183,8 @@ class ChatBridge(
             }
             "setMode" -> msg.str("mode")?.let(session::setMode)
             "setAgent" -> msg.str("agent")?.let(chat::selectAgent)
-            "setModel" -> msg.str("model")?.takeIf { it.isNotBlank() }?.let(session::setModel)
-            "setEffort" -> msg.str("effort")?.takeIf { it.isNotBlank() }?.let(session::setEffort)
+            "setModel" -> msg.str("model")?.takeIf { it.isNotBlank() }?.let(chat::setModel)
+            "setEffort" -> msg.str("effort")?.takeIf { it.isNotBlank() }?.let(chat::setEffort)
             "interrupt" -> chat.interrupt()
             "stopTask" -> msg.str("id")?.takeIf(TASK_ID::matches)?.let(session::stopTask)
             "queueSendNow" -> msg.str("id")?.let(session::sendNow)

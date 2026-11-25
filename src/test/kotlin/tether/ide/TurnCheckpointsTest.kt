@@ -31,6 +31,7 @@ class TurnCheckpointsTest : BasePlatformTestCase() {
         PsiTestUtil.addContentRoot(module, root)
         chats.closeAll()
         chats.connector = { FakeConnection().also { conn = it } }
+        chats.probeConnector = { FakeConnection() }
         chats.store = SessionStore(Files.createTempDirectory("claude-home").toFile())
     }
 

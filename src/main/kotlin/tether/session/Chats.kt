@@ -32,6 +32,7 @@ import java.io.File
 import java.io.FileFilter
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class ClaudeNotFoundException : Exception(
@@ -52,6 +53,12 @@ class Chats(private val project: Project) : Disposable {
     private val ids = AtomicInteger()
     /** The slash commands each agent last reported, so a new chat can offer them before it starts. */
     internal val commandCatalog = CommandCatalog()
+    /** Starts the process a [ModelProbe] asks; the real claude unless a test replaces it. */
+    var probeConnector: (SessionLaunch) -> CliConnection = ::defaultConnect
+    /** What Claude runs by default, so a new chat can show its model and effort before it starts. */
+    internal val modelCatalog = ModelCatalog {
+        ModelProbe({ probeConnector(it) }, projectDir) { AppExecutorUtil.getAppScheduledExecutorService().schedule(it, PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS) }
+    }
 
     val projectDir: String get() = project.basePath ?: System.getProperty("user.home")
 
@@ -154,6 +161,7 @@ class Chats(private val project: Project) : Disposable {
             },
             onAgentSelected = { settings.lastAgent = it.id },
             commandCatalog = commandCatalog,
+            modelCatalog = modelCatalog,
             findPullRequest = pullRequests::find,
         )
         tracker.register(chat.id)
@@ -255,10 +263,15 @@ class Chats(private val project: Project) : Disposable {
             Launch(listOf(executable) + command.drop(1), env)
         }
 
-    override fun dispose() = closeAll()
+    override fun dispose() {
+        modelCatalog.clear()
+        closeAll()
+    }
 
     companion object {
         private val LOG = logger<Chats>()
+        /** How long a [ModelProbe] may take to answer before it is stopped. */
+        private const val PROBE_TIMEOUT_SECONDS = 30L
         fun getInstance(project: Project): Chats = project.service()
     }
 }

@@ -159,6 +159,8 @@ class Chat(
     private val onAgentSelected: (Agent) -> Unit = {},
     /** The commands each agent last reported in any chat, offered by a chat whose own process hasn't reported yet. */
     private val commandCatalog: CommandCatalog = CommandCatalog(),
+    /** The model and effort Claude runs by default, shown by a Claude draft before its process starts and reports. */
+    private val modelCatalog: ModelCatalog = ModelCatalog(),
     /** The name shown until the user gives one (`main`, `main 2`, a worktree name); follows later branch moves, see [followBranch]. */
     defaultName: String = spec.label,
     /** Stores a name the user gave in the session's transcript (blank: none), marked archived or not. Called off the EDT. */
@@ -286,6 +288,7 @@ class Chat(
         }
 
         override fun onModel(choice: ModelChoice) {
+            if (agent.native) modelCatalog.remember(choice, pickedNothing = session.setup.let { it.model == null && it.effort == null })
             if (choice == modelChoice) return
             modelChoice = choice
             view?.model(choice)
@@ -395,6 +398,44 @@ class Chat(
             ?: ChatSession(connector, listener, spec.cwd, spec.resumeId, claudeSetup, spec.worktree, log, ide, background, resumeAnchor, WorkingTrees())
     }
 
+    /** Shows a Claude draft the catalog's model once it knows one; unsubscribed on [start] or [dispose]. */
+    private val unsubscribeModels = modelCatalog.subscribe(::showDraftModel)
+
+    init {
+        wantModels(agent)
+    }
+
+    /** Asks the catalog to find Claude's defaults when a new draft runs Claude; a resumed chat's own process reports them. */
+    private fun wantModels(agent: Agent) {
+        if (agent.native && spec.resumeId == null) modelCatalog.want()
+    }
+
+    private fun showDraftModel() {
+        draftModel()?.let { view?.model(it) }
+    }
+
+    /**
+     * What a Claude draft's model chip shows before its process reports: the catalog's defaults, with the model and
+     * effort picked in the draft. Null once started, for another agent, and while the catalog knows nothing.
+     */
+    private fun draftModel(): ModelChoice? {
+        if (started || !agent.native) return null
+        val setup = session.setup
+        return modelCatalog.preview(setup.model, setup.effort)
+    }
+
+    /** Runs [value] (a model option's value) from now on; a draft shows the pick at once, as it has no process to confirm it. */
+    fun setModel(value: String) {
+        session.setModel(value)
+        showDraftModel()
+    }
+
+    /** Runs at effort [level] from now on; shown at once in a draft, like [setModel]. */
+    fun setEffort(level: String) {
+        session.setEffort(level)
+        showDraftModel()
+    }
+
     private val predictedCwd: String? = spec.worktree?.let { "${spec.cwd.trimEnd('/')}/.claude/worktrees/$it" }
 
     /**
@@ -476,6 +517,7 @@ class Chat(
     fun start() {
         if (started) return
         started = true
+        unsubscribeModels()
         knownCwd = cwd
         session.start()
         view?.agent(agents, agent, true)
@@ -490,6 +532,7 @@ class Chat(
             agent = chosen
             session = newSession(chosen)
         }
+        wantModels(chosen)
         onAgentSelected(chosen)
         view?.let(::showAgent)
         return true
@@ -500,6 +543,7 @@ class Chat(
         view.modes(modes)
         view.state(session.state, session.modeId)
         commands.ifEmpty { commandCatalog.commandsOf(agent) }.takeIf { it.isNotEmpty() }?.let(view::commands)
+        (modelChoice ?: draftModel())?.let(view::model)
     }
 
     /** Shows [text] in the chat. A draft numbers its own notices: the session that will run may still change. */
@@ -519,7 +563,6 @@ class Chat(
         shownBranch?.let(view::branch)
         pullRequest?.let(view::pullRequest)
         contextUsage?.let(view::context)
-        modelChoice?.let(view::model)
         suggestion?.let(view::suggestion)
         queued.takeIf { it.isNotEmpty() }?.let(view::queue)
         processes.takeIf { it.isNotEmpty() }?.let(view::processes)
@@ -833,6 +876,7 @@ class Chat(
 
     fun dispose() {
         disposed = true
+        unsubscribeModels()
         outbox.clear()
         sendPending = false
         attachments.clear()

@@ -29,6 +29,7 @@ class BranchGuardTest : BasePlatformTestCase() {
         home = Files.createTempDirectory("claude-home").toFile()
         chats.store = SessionStore(home)
         chats.connector = { FakeConnection().also { connections += it } }
+        chats.probeConnector = { FakeConnection() }
         guard.background = Runnable::run
         guard.onEdt = Runnable::run
         guard.reload = { reloaded += it }

@@ -1,5 +1,6 @@
 package tether.session
 
+import tether.cli.SlashCommands
 import tether.cli.bool
 import tether.cli.obj
 import tether.cli.parseJsonObject
@@ -222,20 +223,7 @@ class SessionStore(private val claudeHome: File) {
             val text = output.groupValues[2].trimEnd().takeIf { it.isNotBlank() } ?: return null
             return ChatItem.AssistantText(id, text, false, commandOutput = true)
         }
-        return typedCommand(content)?.let { ChatItem.UserText(id, it) }
-    }
-
-    /** The command as typed: `/name args` from a `<command-name>` line, or the line itself when it is already that. */
-    private fun typedCommand(content: String): String? {
-        val name = tagged(content, "command-name") ?: return content.takeIf { it.startsWith("/") }
-        val args = tagged(content, "command-args").orEmpty()
-        return if (args.isEmpty()) name else "$name $args"
-    }
-
-    /** The trimmed text between `<tag>` and `</tag>` in [content]; null when it has no such tag. */
-    private fun tagged(content: String, tag: String): String? {
-        val start = content.indexOf("<$tag>").takeIf { it >= 0 } ?: return null
-        return content.substring(start + tag.length + 2).substringBefore("</$tag>").trim()
+        return SlashCommands.typed(content)?.let { ChatItem.UserText(id, it) }
     }
 
     /** Drops every leading "[IDE] " note (a message can carry an edit note and a context note); null when only notes remain. */

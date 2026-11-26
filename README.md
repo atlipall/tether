@@ -25,6 +25,11 @@ already has (e.g. your Claude Pro subscription). The plugin never reads, stores 
   chat's checkout: since it forked from `main` (or `master`) on a branch, otherwise since the commit
   HEAD was at when the session started (for a resumed session, the last commit before its first
   message). It covers commits, uncommitted edits and new untracked files, yours included.
+- **Continue a chat from your phone.** The Remote Control button in a Claude chat's header turns on the CLI's
+  Remote Control for that chat. The chat then shows a claude.ai link, and you can follow and continue the
+  conversation from claude.ai or the Claude app. Prompts sent from there show in the chat like your own, and a
+  permission answered there closes its prompt in the IDE. Click the button again to turn it off. It lasts as long
+  as the chat's process: a restarted or reopened chat starts with it off.
 - **See how full the context is.** A meter at the right of the chat header shows how much of the
   context window is used. Hover it for tokens used/max, what fills it, and where autocompact kicks in.
   It turns amber within 10 points of autocompact and red at it. It updates when the session starts

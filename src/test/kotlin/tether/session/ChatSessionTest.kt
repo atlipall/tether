@@ -1381,4 +1381,166 @@ class ChatSessionTest {
         assertEquals(listOf(20), listener.contexts.map { it.percent })
         assertTrue(listener.current().none { it is ChatItem.Notice })
     }
+
+    // --- Remote Control ---
+
+    private fun remoteOn(s: ChatSession, url: String = "https://claude.ai/code/session_01NRP") {
+        s.setRemoteControl(true)
+        conn.emit(Fx.remoteControlOn(conn.lastRequestId("remote_control"), url))
+    }
+
+    @Test fun remoteControlIsOfferedOnceTheProcessIsReady() {
+        val s = session()
+        s.setRemoteControl(true)
+        assertEquals("not before the initialize reply", 0, conn.requestCount("remote_control"))
+        assertTrue(listener.remoteControls.isEmpty())
+        answerInit()
+        assertEquals(listOf<RemoteControl>(RemoteControl.Off), listener.remoteControls)
+    }
+
+    @Test fun turningRemoteControlOnSaysWhereToContinue() {
+        val s = session()
+        answerInit()
+        remoteOn(s)
+        val request = conn.lastRequest("remote_control").obj("request")!!
+        assertEquals("true", request["enabled"].toString())
+        assertEquals(
+            listOf(RemoteControl.Off, RemoteControl.Starting, RemoteControl.On("https://claude.ai/code/session_01NRP")),
+            listener.remoteControls,
+        )
+        val notice = listener.latest<ChatItem.Notice>()
+        assertFalse(notice.isError)
+        assertTrue(notice.text, notice.text.contains("https://claude.ai/code/session_01NRP"))
+    }
+
+    @Test fun remoteControlCanBeTurnedOffAgain() {
+        val s = session()
+        answerInit()
+        remoteOn(s)
+        s.setRemoteControl(false)
+        assertEquals(RemoteControl.Stopping("https://claude.ai/code/session_01NRP"), listener.remoteControls.last())
+        conn.emit(Fx.remoteControlOff(conn.lastRequestId("remote_control")))
+        assertEquals(RemoteControl.Off, listener.remoteControls.last())
+        assertEquals("Remote Control is off.", listener.latest<ChatItem.Notice>().text)
+    }
+
+    @Test fun aSecondChangeWaitsForTheFirstAnswer() {
+        val s = session()
+        answerInit()
+        s.setRemoteControl(true)
+        s.setRemoteControl(true)
+        s.setRemoteControl(false)
+        assertEquals(1, conn.requestCount("remote_control"))
+    }
+
+    @Test fun aRefusedRemoteControlStaysOffAndSaysWhy() {
+        val s = session()
+        answerInit()
+        s.setRemoteControl(true)
+        conn.emit(Fx.errorResponse(conn.lastRequestId("remote_control"), "Remote Control is disabled by your organization"))
+        assertEquals(RemoteControl.Off, listener.remoteControls.last())
+        val notice = listener.latest<ChatItem.Notice>()
+        assertTrue(notice.isError)
+        assertTrue(notice.text, notice.text.contains("disabled by your organization"))
+    }
+
+    @Test fun remoteControlFollowsTheConnection() {
+        val s = session()
+        answerInit()
+        remoteOn(s)
+        conn.emit(Fx.bridgeState("reconnecting"))
+        assertEquals(RemoteControl.On("https://claude.ai/code/session_01NRP", reconnecting = true), listener.remoteControls.last())
+        conn.emit(Fx.bridgeState("connected"))
+        assertEquals(RemoteControl.On("https://claude.ai/code/session_01NRP"), listener.remoteControls.last())
+        conn.emit(Fx.bridgeState("failed", "session expired"))
+        assertEquals(RemoteControl.Off, listener.remoteControls.last())
+        assertTrue(listener.latest<ChatItem.Notice>().text.contains("session expired"))
+    }
+
+    @Test fun bridgeStatesAreIgnoredWhileRemoteControlIsOff() {
+        session()
+        answerInit()
+        conn.emit(Fx.bridgeState("failed", "whatever"))
+        assertEquals(listOf<RemoteControl>(RemoteControl.Off), listener.remoteControls)
+        assertTrue(listener.items.none { it is ChatItem.Notice })
+    }
+
+    @Test fun remoteControlEndsWithTheProcess() {
+        val s = session()
+        answerInit()
+        remoteOn(s)
+        conn.exit(1, "boom")
+        assertEquals(RemoteControl.Off, listener.remoteControls.last())
+        s.restart()
+        answerInit()
+        assertEquals(RemoteControl.Off, listener.remoteControls.last())
+        assertEquals("the new process starts with it off", 1, connections.first().requestCount("remote_control"))
+        assertEquals(0, conn.requestCount("remote_control"))
+    }
+
+    @Test fun aReplayWithoutAUuidIsNotShownAgain() {
+        val s = session()
+        answerInit()
+        s.send("hello")
+        conn.emit("""{"type":"user","message":{"role":"user","content":"hello"},"parent_tool_use_id":null,"isReplay":true}""")
+        assertEquals(1, listener.items.count { it is ChatItem.UserText })
+    }
+
+    @Test fun aDroppedQueuedMessageLeavesNoUuidBehind() {
+        val s = session()
+        answerInit()
+        s.send("one")
+        s.send("two")
+        val queued = listener.queues.last().single()
+        s.unqueue(queued.id)
+        conn.emit(Fx.result())
+        assertEquals("only the sent message was written", 1, conn.userUuids().size)
+    }
+
+    @Test fun ownPromptsAreSentWithAUuidAndTheirReplayIsNotShownAgain() {
+        val s = session()
+        answerInit()
+        s.send("hello")
+        val uuid = conn.userUuids().single()!!
+        conn.emit(Fx.replayedPrompt("hello", uuid))
+        assertEquals(listOf("hello"), listener.items.filterIsInstance<ChatItem.UserText>().map { it.text })
+    }
+
+    @Test fun aPromptFromElsewhereIsShownAndStartsATurn() {
+        val s = session()
+        answerInit()
+        conn.emit(Fx.replayedPrompt("fix the build", "from-phone"))
+        assertEquals(listOf("fix the build"), listener.items.filterIsInstance<ChatItem.UserText>().map { it.text })
+        assertEquals(SessionState.RUNNING, s.state)
+        assertFalse("it was not sent from here, so it can't be rewound to", s.canRewindTo(listener.latest<ChatItem.UserText>().id))
+        conn.emit(Fx.textDelta("m1", 0, "On it"), Fx.result())
+        assertEquals(SessionState.IDLE, s.state)
+        assertNull(listener.activities.last())
+    }
+
+    @Test fun aMessageTypedHereWaitsForARemoteTurn() {
+        val s = session()
+        answerInit()
+        conn.emit(Fx.replayedPrompt("from the phone", "remote-1"))
+        s.send("from the IDE")
+        assertEquals(listOf("from the IDE"), listener.queuedTexts())
+        conn.emit(Fx.result())
+        assertEquals(listOf("from the IDE"), conn.userMessages())
+    }
+
+    @Test fun aPermissionAnsweredElsewhereIsWithdrawn() {
+        val s = session()
+        answerInit()
+        s.send("go")
+        conn.emit(Fx.toolUse("m1", "t1", "Write", writeInput), Fx.canUseTool("r1", "t1", "Write", writeInput))
+        assertEquals(SessionState.AWAITING_PERMISSION, s.state)
+        conn.emit(Fx.controlCancel("r1"))
+        val tool = listener.latest<ChatItem.ToolCall>()
+        assertEquals(ToolStatus.RUNNING, tool.status)
+        assertNull(tool.permissionRequestId)
+        assertEquals(SessionState.RUNNING, s.state)
+        assertEquals(Activity.Running("Write"), listener.activities.last())
+        s.respond("r1", PermissionDecision.Allow)
+        assertTrue("a withdrawn request is not answered", conn.sentJson().none { it.str("type") == "control_response" && it.obj("response")?.str("request_id") == "r1" })
+    }
 }

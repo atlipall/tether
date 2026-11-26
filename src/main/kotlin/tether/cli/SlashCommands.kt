@@ -29,6 +29,22 @@ object SlashCommands {
             command(c.str("name"), c.str("description"), c.obj("input")?.str("hint"))
         }
 
+    /**
+     * The command as typed, `/name args`, from the `<command-name>` markup the CLI records a slash command as; [content]
+     * itself when it already starts with `/`, and null for anything else.
+     */
+    fun typed(content: String): String? {
+        val name = tagged(content, "command-name") ?: return content.takeIf { it.startsWith("/") }
+        val args = tagged(content, "command-args").orEmpty()
+        return if (args.isEmpty()) name else "$name $args"
+    }
+
+    /** The trimmed text between `<tag>` and `</tag>` in [content]; null when it has no such tag. */
+    private fun tagged(content: String, tag: String): String? {
+        val start = content.indexOf("<$tag>").takeIf { it >= 0 } ?: return null
+        return content.substring(start + tag.length + 2).substringBefore("</$tag>").trim()
+    }
+
     /** A command named [name] without its leading slash; null when the name is blank. */
     private fun command(name: String?, description: String?, hint: String?): SlashCommand? {
         val bare = name?.trim()?.removePrefix("/")?.takeIf { it.isNotEmpty() } ?: return null

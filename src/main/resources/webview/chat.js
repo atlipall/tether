@@ -39,6 +39,11 @@
   const branchDismissBtn = document.getElementById('branch-dismiss');
   const openPrBtn = document.getElementById('open-pr');
   const openPrNumber = document.getElementById('open-pr-number');
+  const remoteBtn = document.getElementById('remote');
+  /** Remote Control's state as the host last reported it: off, starting, on, reconnecting or stopping. */
+  let remoteState = 'off';
+  /** The session is dead, so Remote Control can't be changed until it restarts. */
+  let sessionDead = false;
   const usageEl = document.getElementById('usage');
   const usageRing = document.getElementById('usage-ring');
   const usagePct = document.getElementById('usage-pct');
@@ -218,6 +223,7 @@
         case 'suggestion': setSuggestion(msg.text); break;
         case 'queue': setQueue(msg.items); break;
         case 'processes': setProcesses(msg.processes); break;
+        case 'remote': setRemote(msg); break;
       }
     }
   };
@@ -1158,6 +1164,10 @@
     statusEl.textContent = STATUS[msg.state] || '';
     if (msg.state === 'DEAD') setActivity({ phase: null });
     restartBtn.hidden = msg.state !== 'DEAD';
+    if (sessionDead !== (msg.state === 'DEAD')) {
+      sessionDead = !sessionDead;
+      showRemote();
+    }
     input.disabled = sendBtn.disabled = attachBtn.disabled = msg.state === 'DEAD';
     if (typeof msg.mode === 'string') {
       mode = msg.mode;
@@ -1277,7 +1287,7 @@
     agentPicker.button.disabled = !!msg.locked || agents.length < 2;
     setChoices(agentPicker, agents, agent);
     agentPicker.button.title = msg.locked ? 'This chat runs ' + agentName + '. Start a new chat for another agent.' : 'Agent for this chat';
-    if (changed) { mode = ''; setModes([]); clearModel(); setCommands([]); }
+    if (changed) { mode = ''; setModes([]); clearModel(); setCommands([]); remoteState = 'off'; remoteBtn.hidden = true; }
     placeholder = 'Message ' + agentName;
     labelShortcuts();
     setSuggestion(changed ? '' : suggestion);
@@ -1487,6 +1497,34 @@
 
   /** Longest pull request title the tooltip quotes in full; longer ones end in an ellipsis. */
   const PR_TITLE_MAX = 80;
+
+  /** What the Remote Control button says in each state: its tooltip, whether it shows as on, and whether a change is under way. */
+  const REMOTE_LOOK = {
+    off: { title: 'Turn on Remote Control to continue this chat from claude.ai or the Claude app', on: false, pending: false },
+    starting: { title: 'Turning on Remote Control…', on: true, pending: true },
+    on: { title: 'Remote Control is on. Click to turn it off.', on: true, pending: false },
+    reconnecting: { title: 'Remote Control is reconnecting. Click to turn it off.', on: true, pending: false },
+    stopping: { title: 'Turning off Remote Control…', on: false, pending: true },
+  };
+
+  /**
+   * Shows the Remote Control button once the host offers it (Claude chats only), pressed while it is on. It can't be
+   * pressed while a change is under way or the session is dead.
+   */
+  function setRemote(msg) {
+    remoteState = REMOTE_LOOK[msg.state] ? msg.state : 'off';
+    remoteBtn.hidden = false;
+    showRemote();
+  }
+
+  function showRemote() {
+    const look = REMOTE_LOOK[remoteState];
+    remoteBtn.setAttribute('aria-pressed', String(look.on));
+    remoteBtn.setAttribute('aria-busy', String(look.pending));
+    remoteBtn.classList.toggle('reconnecting', remoteState === 'reconnecting');
+    remoteBtn.title = sessionDead ? 'Restart the session to use Remote Control' : look.title;
+    remoteBtn.disabled = look.pending || sessionDead;
+  }
 
   /** How the tooltip names a pull request in each status the IDE sends; an open one needs no word. */
   const PR_STATUS_WORD = { draft: 'draft ', merged: 'merged ' };
@@ -1937,6 +1975,10 @@
   restartBtn.addEventListener('click', () => send({ type: 'restart' }));
   document.getElementById('show-changes').addEventListener('click', () => send({ type: 'showChanges' }));
   openPrBtn.addEventListener('click', () => { if (!openPrBtn.hidden) send({ type: 'openUrl', url: openPrBtn.dataset.url }); });
+  remoteBtn.addEventListener('click', () => {
+    if (remoteState === 'off') send({ type: 'remoteControl', on: true });
+    else if (remoteState === 'on' || remoteState === 'reconnecting') send({ type: 'remoteControl', on: false });
+  });
   branchSwitchBtn.addEventListener('click', () => { if (!branchSwitchBtn.disabled) send({ type: 'switchBranch' }); });
   branchDismissBtn.addEventListener('click', () => send({ type: 'dismissBranchBar' }));
   for (const picker of pickers) {

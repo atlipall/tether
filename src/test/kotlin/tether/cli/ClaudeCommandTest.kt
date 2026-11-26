@@ -8,7 +8,7 @@ class ClaudeCommandTest {
     private val base = listOf(
         "/bin/claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json",
         "--include-partial-messages", "--verbose", "--permission-prompt-tool", "stdio",
-        "--prompt-suggestions", "true",
+        "--prompt-suggestions", "true", "--replay-user-messages",
     )
 
     @Test fun newSessionWithoutMode() =

@@ -32,7 +32,8 @@ data class SessionLaunch(
 
 object ClaudeCommand {
     /**
-     * The full command line for [launch]. [extraArgs] come before the chat's own `--model` and `--effort`: the last
+     * The full command line for [launch]. `--replay-user-messages` makes the CLI echo every prompt it takes, so one
+     * that came over Remote Control shows in the chat too. [extraArgs] come before the chat's own `--model` and `--effort`: the last
      * occurrence of each wins, and the chat's choice is the newer one.
      */
     fun build(binary: String, launch: SessionLaunch, extraArgs: List<String>): List<String> = buildList {
@@ -40,7 +41,7 @@ object ClaudeCommand {
         addAll(listOf(
             "-p", "--input-format", "stream-json", "--output-format", "stream-json",
             "--include-partial-messages", "--verbose", "--permission-prompt-tool", "stdio",
-            "--prompt-suggestions", "true",
+            "--prompt-suggestions", "true", "--replay-user-messages",
         ))
         launch.permissionMode?.let { add("--permission-mode"); add(it.cli) }
         launch.worktree?.let { add("--worktree"); add(it) }

@@ -39,6 +39,19 @@ class CliMessagesTest {
         """{"type":"user","message":{"role":"user","content":"hi \"there\""}}""",
         CliMessages.userText("hi \"there\""))
 
+    @Test fun userTextWithUuid() = assertEquals(
+        """{"type":"user","uuid":"id-1","message":{"role":"user","content":"hi"}}""",
+        CliMessages.userText("hi", "id-1"))
+
+    @Test fun remoteControl() {
+        assertEquals(
+            """{"type":"control_request","request_id":"r1","request":{"subtype":"remote_control","enabled":true}}""",
+            CliMessages.remoteControl("r1", true))
+        assertEquals(
+            """{"type":"control_request","request_id":"r2","request":{"subtype":"remote_control","enabled":false}}""",
+            CliMessages.remoteControl("r2", false))
+    }
+
     @Test fun allowEchoesInput() {
         val input = buildJsonObject { put("file_path", JsonPrimitive("/a")) }
         assertEquals(

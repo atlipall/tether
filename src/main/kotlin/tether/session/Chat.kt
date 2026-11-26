@@ -68,6 +68,9 @@ interface SessionView {
 
     /** The background processes running now, oldest first; empty shows none. */
     fun processes(processes: List<BackgroundProcess>) {}
+
+    /** Remote Control's state; never told for an agent without it, which shows no control for it. */
+    fun remoteControl(state: RemoteControl) {}
 }
 
 /** What "Revert to Before This Message" takes back to before a message, as the user chose it. */
@@ -252,6 +255,8 @@ class Chat(
     /** The session's background processes, shown again to a view that attaches. */
     @Volatile private var processes: List<BackgroundProcess> = emptyList()
     @Volatile private var modes: List<Choice> = emptyList()
+    /** Remote Control's state as the session last told it; null until it offers it. */
+    @Volatile private var remoteControl: RemoteControl? = null
     private val draftNotices = AtomicInteger()
 
     private val activityLock = Any()
@@ -318,6 +323,12 @@ class Chat(
         override fun onProcesses(processes: List<BackgroundProcess>) {
             this@Chat.processes = processes
             view?.processes(processes)
+        }
+
+        override fun onRemoteControl(state: RemoteControl) {
+            if (state == remoteControl) return
+            remoteControl = state
+            view?.remoteControl(state)
         }
 
         /** Their text goes back into the message box, so a stopped turn loses nothing the user typed (images aside). */
@@ -566,6 +577,7 @@ class Chat(
         suggestion?.let(view::suggestion)
         queued.takeIf { it.isNotEmpty() }?.let(view::queue)
         processes.takeIf { it.isNotEmpty() }?.let(view::processes)
+        remoteControl?.let(view::remoteControl)
         synchronized(lock) { pendingInsert.also { pendingInsert = null } }?.let(view::insert)
     }
 
@@ -862,6 +874,9 @@ class Chat(
         checkpoints?.conversationRewound(this, item, filesReverted)
         item.text.takeIf { it.isNotBlank() }?.let(::insert)
     }
+
+    /** Turns Remote Control on or off; see [AgentSession.setRemoteControl]. */
+    fun setRemoteControl(on: Boolean) = session.setRemoteControl(on)
 
     /** Stops the turn, and drops messages still waiting for their git note or editor context. EDT only. */
     fun interrupt() {

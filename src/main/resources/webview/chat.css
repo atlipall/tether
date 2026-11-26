@@ -31,6 +31,8 @@ body { display: flex; flex-direction: column; background: var(--bg); color: var(
 #bar button.icon { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
 #bar button.icon svg { width: 15px; height: 15px; }
 #bar button.icon[hidden] { display: none; }
+#bar button.icon[aria-pressed="true"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+#bar button.icon.reconnecting svg { opacity: .55; }
 #bar button.icon.labelled { gap: 4px; padding-right: 7px; font-variant-numeric: tabular-nums; }
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; font-size: .9em; padding: 0 6px; background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--muted); }
 .chip:hover:not(:disabled), .chip[aria-expanded="true"] { background: var(--code-bg); border-color: var(--border); color: var(--fg); }

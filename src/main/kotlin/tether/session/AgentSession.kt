@@ -61,6 +61,12 @@ interface AgentSession {
     /** Stops the running turn; queued messages are dropped (see [ChatListener.onDropped]). */
     fun interrupt()
 
+    /**
+     * Turns Remote Control on or off (see [RemoteControl]); the outcome comes to [ChatListener.onRemoteControl]. Ignored
+     * by agents without it, while no process runs, and while an earlier change is still unanswered.
+     */
+    fun setRemoteControl(on: Boolean) {}
+
     /** Stops one subagent or background process by its task id, leaving the turn running; ignored by agents without tasks. */
     fun stopTask(taskId: String) {}
 

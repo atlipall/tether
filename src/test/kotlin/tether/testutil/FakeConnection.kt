@@ -32,9 +32,11 @@ class FakeConnection : CliConnection {
     fun exit(code: Int, stderr: String) = onExit!!(code, stderr)
 
     fun sentJson(): List<JsonObject> = sent.map { parseJsonObject(it)!! }
+    /** The most recent control_request with the given subtype. */
+    fun lastRequest(subtype: String): JsonObject =
+        sentJson().last { it.str("type") == "control_request" && it.obj("request")?.str("subtype") == subtype }
     /** request_id of the most recent control_request with the given subtype. */
-    fun lastRequestId(subtype: String): String =
-        sentJson().last { it.str("type") == "control_request" && it.obj("request")?.str("subtype") == subtype }.str("request_id")!!
+    fun lastRequestId(subtype: String): String = lastRequest(subtype).str("request_id")!!
     /** How many control requests with the given subtype were sent. */
     fun requestCount(subtype: String): Int =
         sentJson().count { it.str("type") == "control_request" && it.obj("request")?.str("subtype") == subtype }
@@ -45,6 +47,9 @@ class FakeConnection : CliConnection {
             val message = msg.obj("message")!!
             message.str("content") ?: message.arr("content")!!.map { it.jsonObject }.filter { it.str("type") == "text" }.joinToString("\n") { it.str("text")!! }
         }
+
+    /** The uuid each user message was sent with, in order. */
+    fun userUuids(): List<String?> = sentJson().filter { it.str("type") == "user" }.map { it.str("uuid") }
 
     /** Base64 data of the image blocks of every user message (empty for a text-only message). */
     fun userImages(): List<List<String>> =
@@ -81,6 +86,8 @@ class RecordingListener(private val currentMode: (() -> String?)? = null) : Chat
     override fun onDropped(messages: List<tether.session.QueuedMessage>) { dropped += messages }
     val processes = mutableListOf<List<tether.session.BackgroundProcess>>()
     override fun onProcesses(processes: List<tether.session.BackgroundProcess>) { this.processes += processes }
+    val remoteControls = mutableListOf<tether.session.RemoteControl>()
+    override fun onRemoteControl(state: tether.session.RemoteControl) { remoteControls += state }
     fun queuedTexts(): List<String> = queues.lastOrNull().orEmpty().map { it.text }
 
     /** Latest version of every item, in first-seen order. */

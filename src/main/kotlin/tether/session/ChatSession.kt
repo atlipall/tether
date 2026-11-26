@@ -25,6 +25,7 @@ import tether.image.Image
 import tether.image.Images
 import kotlinx.serialization.json.JsonObject
 import java.util.Base64
+import java.util.UUID
 
 enum class SessionState { IDLE, RUNNING, AWAITING_PERMISSION, DEAD }
 
@@ -77,6 +78,12 @@ interface ChatListener {
     /** The background processes running now, oldest first (every change). */
     fun onProcesses(processes: List<BackgroundProcess>) {}
 
+    /**
+     * Remote Control's state, each time it changes; first told, as [RemoteControl.Off], once a process can offer it.
+     * Never told by an agent without it.
+     */
+    fun onRemoteControl(state: RemoteControl) {}
+
     /** Queued messages that will not be sent (the turn was stopped or the process died), oldest first. */
     fun onDropped(messages: List<QueuedMessage>) {}
 }
@@ -126,6 +133,16 @@ private const val CONTEXT_PREFIX = "context"
 
 /** Prefix of get_settings request ids, whose replies say which model and effort are in use. */
 private const val SETTINGS_PREFIX = "settings"
+
+/** Prefix of remote_control request ids. */
+private const val REMOTE_PREFIX = "remote"
+
+/** The bridge states in which Remote Control has stopped by itself; the CLI's `detail` says why. */
+private val BRIDGE_STOPPED = setOf("failed", "policy_disabled")
+/** The bridge state once Remote Control's connection to claude.ai is up. */
+private const val BRIDGE_CONNECTED = "connected"
+/** The bridge state while that connection is down and the CLI is getting it back. */
+private const val BRIDGE_RECONNECTING = "reconnecting"
 
 /** Most images of one tool result converted to display copies; further ones show as "[image]". */
 private const val MAX_TOOL_IMAGES = 6
@@ -210,7 +227,7 @@ class ChatSession(
      * A queued message, its line for the CLI's stdin (image bytes live only here until sent) and its images' files,
      * kept for [imageFile] once it goes out.
      */
-    private class Queued(val shown: QueuedMessage, val line: String, val files: List<String>)
+    private class Queued(val shown: QueuedMessage, val line: String, val files: List<String>, val uuid: String)
     /** Messages waiting for the running turn to end, oldest first. */
     private val queue = ArrayDeque<Queued>()
     private val toolCalls = HashMap<String, ChatItem.ToolCall>()
@@ -267,6 +284,15 @@ class ChatSession(
     private var lastAnswer: String? = resumeAnchor
     /** Each message this session sent, by item id, to the answer it followed (null: it was the first), oldest first. */
     private val anchors = LinkedHashMap<String, String?>()
+    /** Remote Control in the current process, as last told to the listener. */
+    private var remote: RemoteControl = RemoteControl.Off
+    /** The unanswered remote_control request; null when none is out. */
+    private var remoteRequestId: String? = null
+    /**
+     * The uuids of the prompts this session wrote to the current process and whose replay hasn't come back yet. A replayed
+     * prompt not among them came from elsewhere, such as claude.ai over Remote Control.
+     */
+    private val sentUuids = HashSet<String>()
     /** Where to resume [from] until the forked session reports its id; null when not rewinding. */
     private class Fork(val from: String, val at: String)
     private var fork: Fork? = null
@@ -329,17 +355,18 @@ class ChatSession(
         synchronized(lock) {
             if (state == SessionState.DEAD) return
             val payload = listOfNotNull(prefix?.takeIf { it.isNotBlank() }, text.takeIf { it.isNotEmpty() }).joinToString("\n\n")
-            val line = CliMessages.userContent(payload, images)
+            val uuid = UUID.randomUUID().toString()
+            val line = CliMessages.userContent(payload, images, uuid)
             if (state == SessionState.IDLE) {
                 val item = ChatItem.UserText(nextId("user"), text, thumbs)
                 imageFiles.keep(item.id, files)
                 anchors[item.id] = lastAnswer
                 emit(item)
-                connection?.send(line)
+                sendPrompt(line, uuid)
                 beginRunning(Activity.Starting)
                 reportActivity()
             } else {
-                queue.addLast(Queued(QueuedMessage(nextId("queued"), text, thumbs), line, files))
+                queue.addLast(Queued(QueuedMessage(nextId("queued"), text, thumbs), line, files, uuid))
                 notifyQueue()
             }
         }
@@ -383,7 +410,7 @@ class ChatSession(
             val pending = pendingPermissions[requestId] ?: return
             if (pending.toolName == ASK_USER_QUESTION && decision !is PermissionDecision.Deny) return
             val req = pendingPermissions.remove(requestId) ?: return
-            val toolId = req.toolUseId ?: "perm-$requestId"
+            val toolId = toolIdOf(req)
             when (decision) {
                 PermissionDecision.Allow -> connection?.send(CliMessages.allow(requestId, req.input))
                 PermissionDecision.AllowForSession -> {
@@ -413,7 +440,7 @@ class ChatSession(
     override fun answer(requestId: String, answers: Map<String, QuestionAnswer>): Boolean {
         synchronized(lock) {
             val req = pendingPermissions[requestId]?.takeIf { it.toolName == ASK_USER_QUESTION } ?: return false
-            val toolId = req.toolUseId ?: "perm-$requestId"
+            val toolId = toolIdOf(req)
             val card = toolCalls[toolId]?.question ?: return false
             val texts = Questions.answerTexts(card.questions, answers)
             if (texts == null) { answerFailed(requestId); return false }
@@ -433,14 +460,14 @@ class ChatSession(
         synchronized(lock) {
             val req = pendingPermissions[requestId]?.takeIf { it.toolName == ASK_USER_QUESTION } ?: return
             emit(ChatItem.Notice(nextId("notice"), "Couldn't send the answer \u2014 please try again or Skip.", isError = true))
-            toolCalls[req.toolUseId ?: "perm-$requestId"]?.let { emit(it) }
+            toolCalls[toolIdOf(req)]?.let { emit(it) }
         }
     }
 
     /** The questions of the pending AskUserQuestion request [requestId], or null when there is none. */
     override fun pendingQuestions(requestId: String): List<Question>? = synchronized(lock) {
         val req = pendingPermissions[requestId]?.takeIf { it.toolName == ASK_USER_QUESTION } ?: return null
-        toolCalls[req.toolUseId ?: "perm-$requestId"]?.question?.questions
+        toolCalls[toolIdOf(req)]?.question?.questions
     }
 
     /** Switches Claude's permission mode for a recognized CLI mode id; unknown ids are ignored. */
@@ -479,6 +506,23 @@ class ChatSession(
         }
     }
 
+    override fun setRemoteControl(on: Boolean) {
+        synchronized(lock) {
+            val conn = connection ?: return
+            if (initRequestId != null || remoteRequestId != null) return
+            val current = remote
+            val next = when {
+                on && current == RemoteControl.Off -> RemoteControl.Starting
+                !on && current is RemoteControl.On -> RemoteControl.Stopping(current.url)
+                else -> return
+            }
+            val id = nextId(REMOTE_PREFIX)
+            remoteRequestId = id
+            conn.send(CliMessages.remoteControl(id, on))
+            reportRemote(next)
+        }
+    }
+
     /** Sends the CLI a stop_task request; the task's own events then report how it ended. */
     override fun stopTask(taskId: String) {
         synchronized(lock) {
@@ -499,7 +543,7 @@ class ChatSession(
     private fun stopTurn() {
         interruptRequested = true
         for ((requestId, req) in pendingPermissions) {
-            val toolId = req.toolUseId ?: "perm-$requestId"
+            val toolId = toolIdOf(req)
             deniedToolUses += toolId
             connection?.send(CliMessages.deny(requestId, "Interrupted by the user."))
             toolCalls[toolId]?.let { upsertTool(it.copy(status = ToolStatus.DENIED, permissionRequestId = null)) }
@@ -598,6 +642,7 @@ class ChatSession(
                 notifyState()
             }
             is CliEvent.ControlResponse -> {
+                if (event.requestId == remoteRequestId) return onRemoteControlAnswer(event)
                 if (event.requestId.startsWith(CONTEXT_PREFIX)) {
                     if (event.requestId != contextRequestId) return
                     contextRequestId = null
@@ -619,6 +664,7 @@ class ChatSession(
                         event.response?.let(SlashCommands::fromInitialize)?.let(listener::onCommands)
                         requestContextUsage()
                         requestSettings()
+                        listener.onRemoteControl(remote)
                     }
                 }
                 pendingChoices.remove(event.requestId)?.let { undo ->
@@ -670,7 +716,9 @@ class ChatSession(
             is CliEvent.McpMessage -> onMcpMessage(event)
             is CliEvent.HookCallback -> onHookCallback(event)
             is CliEvent.ToolResult -> onToolResult(event, copies.orEmpty())
-            is CliEvent.UserText -> Unit
+            is CliEvent.UserText -> if (event.replay) onReplayedPrompt(event)
+            is CliEvent.ControlCancel -> onPermissionWithdrawn(event.requestId)
+            is CliEvent.BridgeState -> onBridgeState(event)
             is CliEvent.Result -> onResult(event)
             is CliEvent.PromptSuggestion -> onSuggestion(event.text)
             is CliEvent.Ignored -> Unit
@@ -740,7 +788,7 @@ class ChatSession(
         val questions = if (isQuestion) Questions.parse(event.input) else null
         if (isQuestion && questions == null) {
             connection?.send(CliMessages.deny(event.requestId, "The question was malformed."))
-            deniedToolUses += event.toolUseId ?: "perm-${event.requestId}"
+            deniedToolUses += toolIdOf(event)
             emit(ChatItem.Notice(nextId("notice"), "Claude asked a question that could not be shown.", isError = true))
             return
         }
@@ -749,7 +797,7 @@ class ChatSession(
             return
         }
         pendingPermissions[event.requestId] = event
-        val id = event.toolUseId ?: "perm-${event.requestId}"
+        val id = toolIdOf(event)
         val base = toolCalls[id]
             ?: ChatItem.ToolCall(id, event.toolName, event.input, filePathOf(event.input), ToolStatus.RUNNING, null, null, false)
         upsertTool(base.copy(
@@ -759,6 +807,82 @@ class ChatSession(
         ))
         setState(SessionState.AWAITING_PERMISSION)
         reportActivity()
+    }
+
+    /**
+     * The CLI withdrew permission request [requestId] because it was settled elsewhere (answered on claude.ai over
+     * Remote Control): its card goes back to running, and the tool's result says how it went.
+     */
+    private fun onPermissionWithdrawn(requestId: String) {
+        val req = pendingPermissions.remove(requestId) ?: return
+        val toolId = toolIdOf(req)
+        toolCalls[toolId]?.let { upsertTool(it.copy(status = ToolStatus.RUNNING, permissionRequestId = null)) }
+        if (pendingPermissions.isEmpty() && state == SessionState.AWAITING_PERMISSION) beginRunning(toolPhase())
+        reportActivity()
+    }
+
+    /**
+     * A prompt the CLI took. This session's own were shown when sent; any other came from elsewhere (claude.ai over
+     * Remote Control), so it is shown now and the chat is busy with its turn. One without a uuid can't be told apart, so
+     * it is taken for this session's own rather than risk showing a message twice.
+     */
+    private fun onReplayedPrompt(event: CliEvent.UserText) {
+        if (event.uuid == null || sentUuids.remove(event.uuid)) return
+        emit(ChatItem.UserText(nextId("user"), event.text))
+        if (!turnOpen) beginRunning(Activity.Starting)
+        reportActivity()
+    }
+
+    /**
+     * Settles the pending remote_control request: on success the chat says where to continue it (or that it is off);
+     * on failure Remote Control stays as it was and the chat says why.
+     */
+    private fun onRemoteControlAnswer(event: CliEvent.ControlResponse) {
+        remoteRequestId = null
+        val asked = remote
+        val turningOff = asked is RemoteControl.Stopping
+        if (!event.isSuccess) {
+            reportRemote(if (asked is RemoteControl.Stopping) RemoteControl.On(asked.url) else RemoteControl.Off)
+            emitNotice("Couldn\u2019t turn Remote Control ${if (turningOff) "off" else "on"}: ${event.error ?: "unknown error"}", isError = true)
+        } else if (turningOff) {
+            reportRemote(RemoteControl.Off)
+            emitNotice("Remote Control is off.", isError = false)
+        } else {
+            val url = event.response?.str("session_url")?.takeIf { it.startsWith("https://") }
+            reportRemote(RemoteControl.On(url))
+            emitNotice("Remote Control is on. Continue this chat at ${url ?: "claude.ai/code"} or in the Claude app.", isError = false)
+        }
+    }
+
+    /** Follows Remote Control's connection while it is on; when it stops by itself the chat says so. */
+    private fun onBridgeState(event: CliEvent.BridgeState) {
+        val on = remote as? RemoteControl.On ?: return
+        when (event.state) {
+            BRIDGE_CONNECTED -> reportRemote(on.copy(reconnecting = false))
+            BRIDGE_RECONNECTING -> reportRemote(on.copy(reconnecting = true))
+            in BRIDGE_STOPPED -> {
+                reportRemote(RemoteControl.Off)
+                emitNotice("Remote Control stopped" + (event.detail?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "."), isError = true)
+            }
+        }
+    }
+
+    /** Writes a prompt to the process, remembering [uuid] so its replay is known for this session's own. */
+    private fun sendPrompt(line: String, uuid: String) {
+        val conn = connection ?: return
+        sentUuids += uuid
+        conn.send(line)
+    }
+
+    /** The id of the card that shows permission request [req]: its tool call's, or one made up for a call without one. */
+    private fun toolIdOf(req: CliEvent.PermissionRequest) = req.toolUseId ?: "perm-${req.requestId}"
+
+    private fun emitNotice(text: String, isError: Boolean) = emit(ChatItem.Notice(nextId("notice"), text, isError))
+
+    private fun reportRemote(next: RemoteControl) {
+        if (next == remote) return
+        remote = next
+        listener.onRemoteControl(next)
     }
 
     /** Answers Claude's MCP traffic to [IDE_SERVER]; tool calls run in [background] and answer the process that asked. */
@@ -909,7 +1033,7 @@ class ChatSession(
             imageFiles.keep(item.id, next.files)
             anchors[item.id] = lastAnswer
             emit(item)
-            connection?.send(next.line)
+            sendPrompt(next.line, next.uuid)
             beginRunning(Activity.Starting)
         } else {
             setState(SessionState.IDLE)
@@ -961,6 +1085,9 @@ class ChatSession(
         snapshotsBeforeBash.clear()
         backgroundTasks = emptyList()
         reportProcesses()
+        remoteRequestId = null
+        sentUuids.clear()
+        reportRemote(RemoteControl.Off)
         endAgents { true }
         phase = null
     }

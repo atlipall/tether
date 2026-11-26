@@ -59,12 +59,24 @@ sealed interface CliEvent {
         val images: List<ImageBlock> = emptyList(),
         val parentId: String? = null,
     ) : CliEvent
-    data class UserText(val text: String) : CliEvent
+    /**
+     * A main-conversation user message's text. [replay] marks the CLI's echo of a prompt it took (see
+     * `--replay-user-messages`), named by the [uuid] it was sent with; a prompt that came over Remote Control carries
+     * one the plugin never sent. A slash command reads as typed, `/name args`.
+     */
+    data class UserText(val text: String, val uuid: String? = null, val replay: Boolean = false) : CliEvent
     data class PermissionRequest(val requestId: String, val toolName: String, val toolUseId: String?, val input: JsonObject) : CliEvent
     /** Claude's MCP traffic for in-process server [server]; a JSON-RPC request is answered with [CliMessages.mcpResponse]. */
     data class McpMessage(val requestId: String, val server: String, val message: JsonObject) : CliEvent
     /** A hook registered in the initialize request fired; answered with [CliMessages.hookResponse]. */
     data class HookCallback(val requestId: String, val callbackId: String, val input: JsonObject) : CliEvent
+    /** The CLI withdrew control request [requestId], e.g. a permission request answered from claude.ai instead. */
+    data class ControlCancel(val requestId: String) : CliEvent
+    /**
+     * Remote Control's connection changed. [state] is the CLI's word for it (`ready`, `connected`, `reconnecting`,
+     * `failed`, `policy_disabled` and so on); [detail] says why, when it says.
+     */
+    data class BridgeState(val state: String, val detail: String?) : CliEvent
     data class ControlResponse(val requestId: String, val isSuccess: Boolean, val response: JsonObject?, val error: String?) : CliEvent
     data class Result(
         val isError: Boolean,
@@ -83,6 +95,8 @@ sealed interface CliEvent {
 /** Turns one stdout line of `claude --output-format stream-json` into zero or more events. */
 object CliParser {
     private val EMPTY = JsonObject(emptyMap())
+    /** What a replayed prompt of only images reads as. */
+    private const val IMAGE_MARK = "[image]"
 
     fun parse(line: String): List<CliEvent> {
         val obj = parseJsonObject(line) ?: return listOf(CliEvent.Malformed(line))
@@ -92,6 +106,7 @@ object CliParser {
                     "init" -> listOf(CliEvent.SystemInit(obj.str("session_id") ?: "", obj.str("permissionMode"), obj.str("cwd")))
                     "background_tasks_changed" -> listOf(CliEvent.BackgroundTasks(backgroundTasks(obj)))
                     "task_started", "task_progress", "task_notification" -> listOf(task(obj))
+                    "bridge_state" -> listOf(CliEvent.BridgeState(obj.str("state") ?: "", obj.str("detail")))
                     else -> listOf(CliEvent.Ignored("system/${obj.str("subtype")}"))
                 }
             "stream_event" -> listOf(streamEvent(obj))
@@ -99,6 +114,7 @@ object CliParser {
             "user" -> user(obj)
             "control_request" -> listOf(controlRequest(obj))
             "control_response" -> listOf(controlResponse(obj))
+            "control_cancel_request" -> listOf(CliEvent.ControlCancel(obj.str("request_id") ?: ""))
             "result" -> listOf(result(obj))
             "prompt_suggestion" -> listOf(CliEvent.PromptSuggestion(obj.str("suggestion") ?: ""))
             else -> listOf(CliEvent.Ignored(type ?: "?"))
@@ -167,12 +183,23 @@ object CliParser {
         return listOf(CliEvent.AssistantMessage(uuid)) + blocks
     }
 
-    /** A subagent's user text is dropped: it is the subagent's prompt, which its task_started event already carries. */
+    /**
+     * A subagent's user text is dropped: it is the subagent's prompt, which its task_started event already carries. A
+     * replayed prompt's text blocks are one message, so they come as one [CliEvent.UserText]; one of only images reads
+     * as [IMAGE_MARK].
+     */
     private fun user(obj: JsonObject): List<CliEvent> {
         val content = obj.obj("message")?.get("content") ?: return emptyList()
         val parent = obj.str("parent_tool_use_id")
-        if (content is JsonPrimitive) return if (parent == null) listOf(CliEvent.UserText(content.content)) else emptyList()
+        val replay = obj.bool("isReplay") == true
+        fun userText(text: String) = CliEvent.UserText(if (replay) SlashCommands.typed(text) ?: text else text, obj.str("uuid"), replay)
+        if (content is JsonPrimitive) return if (parent == null) listOf(userText(content.content)) else emptyList()
         val blocks = (content as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+        if (replay && blocks.none { it.str("type") == "tool_result" }) {
+            val text = blocks.filter { it.str("type") == "text" }.mapNotNull { it.str("text") }.joinToString("\n\n")
+                .ifEmpty { IMAGE_MARK.takeIf { blocks.any { it.str("type") == "image" } }.orEmpty() }
+            return if (parent == null && text.isNotEmpty()) listOf(userText(text)) else emptyList()
+        }
         val toolUseResult = obj["tool_use_result"] as? JsonObject
         val singleResult = blocks.count { it.str("type") == "tool_result" } == 1
         return blocks.mapNotNull { b ->
@@ -191,7 +218,7 @@ object CliParser {
                         parentId = parent,
                     )
                 }
-                "text" -> if (parent == null) CliEvent.UserText(b.str("text") ?: "") else null
+                "text" -> if (parent == null) userText(b.str("text") ?: "") else null
                 else -> null
             }
         }

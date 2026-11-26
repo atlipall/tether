@@ -162,6 +162,25 @@ object Fx {
     fun interruptedUser() =
         """{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]},"parent_tool_use_id":null,"session_id":"sess-1","uuid":"u8"}"""
 
+    /** The CLI's echo of a prompt it took (`--replay-user-messages`), as claude 2.1.330 writes it. */
+    fun replayedPrompt(text: String, uuid: String) =
+        """{"type":"user","message":{"role":"user","content":${q(text)}},"session_id":"sess-1","parent_tool_use_id":null,"uuid":"$uuid","timestamp":"2026-11-26T22:28:15.759Z","isReplay":true}"""
+
+    /** The reply to turning Remote Control on, as claude 2.1.330 writes it. */
+    fun remoteControlOn(requestId: String, url: String = "https://claude.ai/code/session_01NRP") =
+        """{"type":"control_response","response":{"subtype":"success","request_id":"$requestId","response":{"session_url":${q(url)},"connect_url":"https://claude.ai/code?environment=","environment_id":"","bridge_epoch":1,"bridge_session_id":"cse_01NRP"}}}"""
+
+    /** The reply to turning Remote Control off. */
+    fun remoteControlOff(requestId: String) =
+        """{"type":"control_response","response":{"subtype":"success","request_id":"$requestId"}}"""
+
+    fun bridgeState(state: String, detail: String? = null) =
+        """{"type":"system","subtype":"bridge_state","state":"$state",${detail?.let { "\"detail\":${q(it)}," } ?: ""}"bridge_epoch":1,"uuid":"u20","session_id":"sess-1"}"""
+
+    /** The CLI withdrawing a request it sent, e.g. a permission answered over Remote Control. */
+    fun controlCancel(requestId: String) =
+        """{"type":"control_cancel_request","request_id":"$requestId","session_id":"sess-1"}"""
+
     fun result(text: String = "DONE") =
         """{"type":"result","subtype":"success","is_error":false,"duration_ms":5566,"duration_api_ms":4514,"num_turns":2,"result":${q(text)},"stop_reason":"end_turn","session_id":"sess-1","total_cost_usd":0.1944822,"uuid":"u10"}"""
 

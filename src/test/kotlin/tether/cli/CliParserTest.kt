@@ -155,8 +155,32 @@ class CliParserTest {
     }
 
     @Test fun interruptedUserText() {
-        assertEquals(CliEvent.UserText("[Request interrupted by user]"), one(Fx.interruptedUser()))
+        assertEquals(CliEvent.UserText("[Request interrupted by user]", "u8"), one(Fx.interruptedUser()))
     }
+
+    @Test fun replayedPromptCarriesItsUuid() =
+        assertEquals(CliEvent.UserText("say hi", "id-1", replay = true), one(Fx.replayedPrompt("say hi", "id-1")))
+
+    @Test fun replayedSlashCommandReadsAsTyped() = assertEquals(
+        CliEvent.UserText("/compact keep the plan", "id-2", replay = true),
+        one(Fx.replayedPrompt("<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args>keep the plan</command-args>", "id-2")))
+
+    @Test fun replayedPromptWithImagesIsOneMessage() {
+        val line = """{"type":"user","message":{"role":"user","content":[{"type":"text","text":"look"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA"}},{"type":"text","text":"here"}]},"parent_tool_use_id":null,"uuid":"id-3","isReplay":true}"""
+        assertEquals(CliEvent.UserText("look\n\nhere", "id-3", replay = true), one(line))
+    }
+
+    @Test fun replayedPromptOfOnlyImages() {
+        val line = """{"type":"user","message":{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA"}}]},"parent_tool_use_id":null,"uuid":"id-4","isReplay":true}"""
+        assertEquals(CliEvent.UserText("[image]", "id-4", replay = true), one(line))
+    }
+
+    @Test fun bridgeState() {
+        assertEquals(CliEvent.BridgeState("connected", null), one(Fx.bridgeState("connected")))
+        assertEquals(CliEvent.BridgeState("failed", "token expired"), one(Fx.bridgeState("failed", "token expired")))
+    }
+
+    @Test fun controlCancelRequest() = assertEquals(CliEvent.ControlCancel("r7"), one(Fx.controlCancel("r7")))
 
     @Test fun controlResponses() {
         val ok = one(Fx.initResponse("init-1", "plan")) as CliEvent.ControlResponse

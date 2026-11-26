@@ -47,8 +47,13 @@ object CliMessages {
         }
     }
 
-    fun userText(text: String): String = buildJsonObject {
+    /**
+     * A user message. [uuid] names it: the CLI keeps it when it replays the message (`--replay-user-messages`), so a
+     * replay can be told apart from a prompt that reached the session another way, such as over Remote Control.
+     */
+    fun userText(text: String, uuid: String? = null): String = buildJsonObject {
         put("type", "user")
+        uuid?.let { put("uuid", it) }
         putJsonObject("message") {
             put("role", "user")
             put("content", text)
@@ -57,12 +62,13 @@ object CliMessages {
 
     /**
      * A user message with images: a content array of the text block (left out when [text] is blank) and one base64
-     * image block per image, in that order. Without images it is [userText].
+     * image block per image, in that order. Without images it is [userText]. [uuid] names it, as for [userText].
      */
-    fun userContent(text: String, images: List<Image>): String {
-        if (images.isEmpty()) return userText(text)
+    fun userContent(text: String, images: List<Image>, uuid: String? = null): String {
+        if (images.isEmpty()) return userText(text, uuid)
         return buildJsonObject {
             put("type", "user")
+            uuid?.let { put("uuid", it) }
             putJsonObject("message") {
                 put("role", "user")
                 putJsonArray("content") {
@@ -122,6 +128,15 @@ object CliMessages {
     fun setEffort(requestId: String, effort: String): String = controlRequest(requestId) {
         put("subtype", "apply_flag_settings")
         putJsonObject("settings") { put("effortLevel", effort) }
+    }
+
+    /**
+     * Turns Remote Control on or off: while on, the session can be followed and continued from claude.ai or the Claude
+     * app. Turning it on is answered with the session's `session_url`.
+     */
+    fun remoteControl(requestId: String, enabled: Boolean): String = controlRequest(requestId) {
+        put("subtype", "remote_control")
+        put("enabled", enabled)
     }
 
     /** Refuses a control request the plugin can't serve. */

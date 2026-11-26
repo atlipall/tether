@@ -208,6 +208,16 @@ class ChatBridgeTest : BasePlatformTestCase() {
         assertFalse(description.contains('`'))
     }
 
+    fun testRemoteControlMessage() {
+        fun msg(state: tether.session.RemoteControl) = parseJsonObject(ChatBridge.remoteControlMessage(state))!!
+        val url = "https://claude.ai/code/session_1"
+        assertEquals("off", msg(tether.session.RemoteControl.Off).str("state"))
+        assertEquals("starting", msg(tether.session.RemoteControl.Starting).str("state"))
+        assertEquals("on", msg(tether.session.RemoteControl.On(url)).str("state"))
+        assertEquals("reconnecting", msg(tether.session.RemoteControl.On(url, reconnecting = true)).str("state"))
+        assertEquals("stopping", msg(tether.session.RemoteControl.Stopping(url)).str("state"))
+    }
+
     fun testUsageMessage() {
         val usage = tether.cli.ContextUsage(76000, 200000, 38, 83, listOf(
             tether.cli.ContextCategory("Messages", 52000),

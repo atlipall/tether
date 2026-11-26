@@ -5,6 +5,7 @@ import java.util.concurrent.CancellationException
 import tether.cli.ModelChoice
 import tether.cli.SlashCommand
 import tether.cli.arr
+import tether.cli.bool
 import tether.cli.long
 import tether.cli.parseJsonObject
 import tether.cli.str
@@ -33,6 +34,7 @@ import tether.session.FileDiff
 import tether.session.PermissionDecision
 import tether.session.QuestionAnswer
 import tether.session.QueuedMessage
+import tether.session.RemoteControl
 import tether.session.SessionState
 import tether.session.SessionView
 import tether.session.toJson
@@ -186,6 +188,7 @@ class ChatBridge(
             "setModel" -> msg.str("model")?.takeIf { it.isNotBlank() }?.let(chat::setModel)
             "setEffort" -> msg.str("effort")?.takeIf { it.isNotBlank() }?.let(chat::setEffort)
             "interrupt" -> chat.interrupt()
+            "remoteControl" -> msg.bool("on")?.let(chat::setRemoteControl)
             "stopTask" -> msg.str("id")?.takeIf(TASK_ID::matches)?.let(session::stopTask)
             "queueSendNow" -> msg.str("id")?.let(session::sendNow)
             "queueEdit" -> msg.str("id")?.let(chat::editQueued)
@@ -466,6 +469,8 @@ class ChatBridge(
 
     override fun processes(processes: List<BackgroundProcess>) = post(processesMessage(processes))
 
+    override fun remoteControl(state: RemoteControl) = post(remoteControlMessage(state))
+
     override fun queue(messages: List<QueuedMessage>) = post(buildJsonObject {
         put("type", "queue")
         put("items", JsonArray(messages.map { ChatItem.UserText(it.id, it.text, it.images).toJson() }))
@@ -686,6 +691,17 @@ class ChatBridge(
                     o.description?.let { ContextNotes.clean(it, MAX_MODEL_TEXT) }?.takeIf { it.isNotEmpty() }?.let { put("description", it) }
                 }
             }
+        }.toString()
+
+        /** `{type:"remote", state}`: state is `off`, `starting`, `on`, `reconnecting` or `stopping`. */
+        fun remoteControlMessage(state: RemoteControl): String = buildJsonObject {
+            put("type", "remote")
+            put("state", when (state) {
+                RemoteControl.Off -> "off"
+                RemoteControl.Starting -> "starting"
+                is RemoteControl.On -> if (state.reconnecting) "reconnecting" else "on"
+                is RemoteControl.Stopping -> "stopping"
+            })
         }.toString()
 
         /** `{type:"usage", used, max, percent, autocompactAt?, categories:[{name, tokens}]}`; names are cleaned like tool names. */

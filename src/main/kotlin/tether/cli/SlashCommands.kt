@@ -30,6 +30,18 @@ object SlashCommands {
         }
 
     /**
+     * What follows command [name] in [text], with runs of whitespace (line breaks too) made single spaces; empty when
+     * nothing does, and null when [text] doesn't run that command (see [isInvocation]).
+     */
+    fun argsOf(text: String, name: String): String? {
+        val rest = text.removePrefix("/$name").takeIf { it.length < text.length } ?: return null
+        if (rest.isNotEmpty() && !rest.first().isWhitespace()) return null
+        return rest.trim().replace(WHITESPACE, " ")
+    }
+
+    private val WHITESPACE = Regex("\\s+")
+
+    /**
      * The command as typed, `/name args`, from the `<command-name>` markup the CLI records a slash command as; [content]
      * itself when it already starts with `/`, and null for anything else.
      */

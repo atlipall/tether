@@ -132,11 +132,13 @@ object CliMessages {
 
     /**
      * Turns Remote Control on or off: while on, the session can be followed and continued from claude.ai or the Claude
-     * app. Turning it on is answered with the session's `session_url`.
+     * app. Turning it on is answered with the session's `session_url`; [name] names the session there, null leaves it to
+     * the CLI.
      */
-    fun remoteControl(requestId: String, enabled: Boolean): String = controlRequest(requestId) {
+    fun remoteControl(requestId: String, enabled: Boolean, name: String? = null): String = controlRequest(requestId) {
         put("subtype", "remote_control")
         put("enabled", enabled)
+        name?.let { put("name", it) }
     }
 
     /** Refuses a control request the plugin can't serve. */

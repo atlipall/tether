@@ -377,7 +377,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
         val conn = connections.single()
         conn.emit(Fx.initResponseWithCommands(conn.lastRequestId("initialize"), """[{"name":"simplify","description":"Simplify code","argumentHint":""}]"""))
         val shown = posted.last { it.str("type") == "commands" }
-        assertEquals("simplify", shown.arr("items")!!.single().jsonObject.str("name"))
+        assertEquals(listOf("simplify", "remote-control"), shown.arr("items")!!.map { it.jsonObject.str("name") })
     }
 
     fun testANewChatOffersTheCommandsItsAgentLastReported() {
@@ -387,7 +387,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
         val fresh = chats.open(ChatSpec("wt-2", "$root/.claude/worktrees/wt-2"))
         val freshPosted = mutableListOf<JsonObject>()
         ChatBridge(project, fresh) { freshPosted += parseJsonObject(it)!! }.handle("""{"type":"ready"}""")
-        assertEquals("simplify", freshPosted.last { it.str("type") == "commands" }.arr("items")!!.single().jsonObject.str("name"))
+        assertEquals(listOf("simplify", "remote-control"), freshPosted.last { it.str("type") == "commands" }.arr("items")!!.map { it.jsonObject.str("name") })
     }
 
     fun testNoCommandsMessageWhenNoneAreKnown() {
@@ -799,7 +799,7 @@ class ChatBridgeTest : BasePlatformTestCase() {
         conn.emit(Fx.initResponseWithCommands(conn.lastRequestId("initialize"), """[{"name":"simplify"}]"""))
         chats.open(ChatSpec("wt-3", "$root/.claude/worktrees/wt-3")).start()
         connections[1].emit(Fx.initResponse(connections[1].lastRequestId("initialize")))
-        assertEquals(listOf("simplify"), chats.commandCatalog.commandsOf(tether.session.Agent.CLAUDE).map { it.name })
+        assertEquals(listOf("simplify", "remote-control"), chats.commandCatalog.commandsOf(tether.session.Agent.CLAUDE).map { it.name })
     }
 
     fun testARestoredChatStartsWithItsUnsentText() {

@@ -1390,12 +1390,92 @@ class ChatSessionTest {
     }
 
     @Test fun remoteControlIsOfferedOnceTheProcessIsReady() {
-        val s = session()
-        s.setRemoteControl(true)
-        assertEquals("not before the initialize reply", 0, conn.requestCount("remote_control"))
+        session()
         assertTrue(listener.remoteControls.isEmpty())
         answerInit()
         assertEquals(listOf<RemoteControl>(RemoteControl.Off), listener.remoteControls)
+    }
+
+    @Test fun turningRemoteControlOnBeforeTheProcessIsReadyWaitsForIt() {
+        val s = session()
+        s.setRemoteControl(true)
+        assertEquals("not before the initialize reply", 0, conn.requestCount("remote_control"))
+        assertEquals(RemoteControl.Starting, listener.remoteControls.last())
+        answerInit()
+        assertEquals(1, conn.requestCount("remote_control"))
+        conn.emit(Fx.remoteControlOn(conn.lastRequestId("remote_control")))
+        assertEquals(RemoteControl.On("https://claude.ai/code/session_01NRP"), listener.remoteControls.last())
+    }
+
+    @Test fun theRemoteControlCommandTurnsItOnWithoutTellingClaude() {
+        val s = session()
+        answerInit()
+        s.send("/remote-control  my laptop ")
+        val request = conn.lastRequest("remote_control").obj("request")!!
+        assertEquals("my laptop", request.str("name"))
+        assertTrue("nothing went to Claude", conn.userMessages().isEmpty())
+        assertEquals(SessionState.IDLE, s.state)
+        assertEquals(RemoteControl.Starting, listener.remoteControls.last())
+    }
+
+    @Test fun theRemoteControlCommandAsTheFirstMessageWaitsForTheProcess() {
+        val s = session()
+        s.send("/remote-control")
+        answerInit()
+        assertNull("no name given", conn.lastRequest("remote_control").obj("request")!!.str("name"))
+    }
+
+    @Test fun theRemoteControlCommandRepeatsTheLinkWhileOn() {
+        val s = session()
+        answerInit()
+        remoteOn(s)
+        s.send("/remote-control")
+        assertEquals(1, conn.requestCount("remote_control"))
+        assertEquals(2, listener.items.count { it is ChatItem.Notice && it.text.contains("https://claude.ai/code/session_01NRP") })
+    }
+
+    @Test fun aRemoteControlNameIsOneLine() {
+        val s = session()
+        answerInit()
+        s.send("/remote-control my\n  laptop")
+        assertEquals("my laptop", conn.lastRequest("remote_control").obj("request")!!.str("name"))
+    }
+
+    @Test fun theRemoteControlCommandWithImagesGoesToClaude() {
+        val s = session()
+        answerInit()
+        s.send("/remote-control", images = listOf(red), thumbs = listOf("t"), files = listOf("/i.png"))
+        assertEquals(0, conn.requestCount("remote_control"))
+        assertEquals(1, conn.userMessages().size)
+    }
+
+    @Test fun aFailedStartLeavesAWaitingRemoteControlOff() {
+        val s = session()
+        s.setRemoteControl(true)
+        conn.emit(Fx.errorResponse(conn.lastRequestId("initialize"), "bad"))
+        assertEquals(0, conn.requestCount("remote_control"))
+        assertEquals(RemoteControl.Off, listener.remoteControls.last())
+    }
+
+    @Test fun aWaitingRemoteControlIsReportedOnce() {
+        val s = session()
+        s.setRemoteControl(true)
+        answerInit()
+        assertEquals(listOf<RemoteControl>(RemoteControl.Starting), listener.remoteControls)
+    }
+
+    @Test fun aMessageThatOnlyMentionsTheCommandGoesToClaude() {
+        val s = session()
+        answerInit()
+        s.send("/remote-controller please")
+        assertEquals(listOf("/remote-controller please"), conn.userMessages())
+        assertEquals(0, conn.requestCount("remote_control"))
+    }
+
+    @Test fun theRemoteControlCommandIsOffered() {
+        session()
+        conn.emit(Fx.initResponseWithCommands(conn.lastRequestId("initialize"), """[{"name":"compact","description":"Compact","argumentHint":""}]"""))
+        assertEquals(listOf("compact", "remote-control"), listener.commands.last().map { it.name })
     }
 
     @Test fun turningRemoteControlOnSaysWhereToContinue() {

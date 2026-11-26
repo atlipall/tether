@@ -137,6 +137,12 @@ private const val SETTINGS_PREFIX = "settings"
 /** Prefix of remote_control request ids. */
 private const val REMOTE_PREFIX = "remote"
 
+/**
+ * The command that turns Remote Control on, as the CLI's interactive `/remote-control` does; the CLI offers no such
+ * command to Tether's process, so Tether serves it. What follows it names the session on claude.ai.
+ */
+internal val REMOTE_COMMAND = SlashCommand("remote-control", "Continue this chat from claude.ai or the Claude app", "[name]")
+
 /** The bridge states in which Remote Control has stopped by itself; the CLI's `detail` says why. */
 private val BRIDGE_STOPPED = setOf("failed", "policy_disabled")
 /** The bridge state once Remote Control's connection to claude.ai is up. */
@@ -288,6 +294,9 @@ class ChatSession(
     private var remote: RemoteControl = RemoteControl.Off
     /** The unanswered remote_control request; null when none is out. */
     private var remoteRequestId: String? = null
+    /** Turning Remote Control on was asked for before the initialize reply, under this name; it goes out with that reply. */
+    private class RemoteAsk(val name: String?)
+    private var remoteAfterInit: RemoteAsk? = null
     /**
      * The uuids of the prompts this session wrote to the current process and whose replay hasn't come back yet. A replayed
      * prompt not among them came from elsewhere, such as claude.ai over Remote Control.
@@ -343,7 +352,9 @@ class ChatSession(
     /**
      * Shows [text] (with [thumbs] of its images above it) in the chat; sends "[prefix]\n\n[text]" and [images] to
      * Claude. [files] are the images' paths on disk, kept for [imageFile]. While a turn is running the message
-     * is queued instead (see [ChatListener.onQueue]) and enters the chat when it goes out.
+     * is queued instead (see [ChatListener.onQueue]) and enters the chat when it goes out. `/remote-control [name]`
+     * without images is Tether's own (see [REMOTE_COMMAND]): it acts at once, even during a turn, and nothing goes to
+     * Claude.
      */
     override fun send(
         text: String,
@@ -354,6 +365,7 @@ class ChatSession(
     ) {
         synchronized(lock) {
             if (state == SessionState.DEAD) return
+            if (images.isEmpty()) SlashCommands.argsOf(text, REMOTE_COMMAND.name)?.let { return onRemoteCommand(it.ifEmpty { null }) }
             val payload = listOfNotNull(prefix?.takeIf { it.isNotBlank() }, text.takeIf { it.isNotEmpty() }).joinToString("\n\n")
             val uuid = UUID.randomUUID().toString()
             val line = CliMessages.userContent(payload, images, uuid)
@@ -507,20 +519,54 @@ class ChatSession(
     }
 
     override fun setRemoteControl(on: Boolean) {
-        synchronized(lock) {
-            val conn = connection ?: return
-            if (initRequestId != null || remoteRequestId != null) return
-            val current = remote
-            val next = when {
-                on && current == RemoteControl.Off -> RemoteControl.Starting
-                !on && current is RemoteControl.On -> RemoteControl.Stopping(current.url)
-                else -> return
-            }
-            val id = nextId(REMOTE_PREFIX)
-            remoteRequestId = id
-            conn.send(CliMessages.remoteControl(id, on))
-            reportRemote(next)
+        synchronized(lock) { requestRemoteControl(on, name = null) }
+    }
+
+    /**
+     * `/remote-control [name]`: turns Remote Control on under [name], or says again where to continue the chat when it
+     * is already on. Nothing is sent to Claude.
+     */
+    private fun onRemoteCommand(name: String?) {
+        when (val now = remote) {
+            is RemoteControl.On -> emitNotice(remoteOnNotice(now.url), isError = false)
+            RemoteControl.Off -> requestRemoteControl(on = true, name)
+            else -> Unit
         }
+    }
+
+    /**
+     * Asks the CLI to turn Remote Control on (under [name]) or off. Before the initialize reply, turning on waits for it;
+     * otherwise a change is ignored while no process runs, while an earlier one is unanswered, or when it changes nothing.
+     */
+    private fun requestRemoteControl(on: Boolean, name: String?) {
+        if (connection == null || remoteRequestId != null) return
+        val beforeInit = initRequestId != null
+        if (beforeInit && !on) return
+        val current = remote
+        val next = when {
+            on && current == RemoteControl.Off -> RemoteControl.Starting
+            !on && current is RemoteControl.On -> RemoteControl.Stopping(current.url)
+            else -> return
+        }
+        reportRemote(next)
+        if (beforeInit) remoteAfterInit = RemoteAsk(name) else sendRemoteRequest(on, name)
+    }
+
+    /**
+     * Settles a request to turn Remote Control on that waited for the initialize reply: it goes out once the process
+     * is ready ([ready]); a process that failed to initialize can't offer it, so it is left off.
+     */
+    private fun settleRemoteAfterInit(ready: Boolean) {
+        val ask = remoteAfterInit ?: return
+        remoteAfterInit = null
+        if (ready) sendRemoteRequest(on = true, ask.name) else reportRemote(RemoteControl.Off)
+    }
+
+    private fun sendRemoteRequest(on: Boolean, name: String?) {
+        val conn = connection ?: return
+        val id = nextId(REMOTE_PREFIX)
+        remoteRequestId = id
+        conn.send(CliMessages.remoteControl(id, on, name))
     }
 
     /** Sends the CLI a stop_task request; the task's own events then report how it ended. */
@@ -661,11 +707,12 @@ class ChatSession(
                     initRequestId = null
                     if (event.isSuccess) {
                         modelOptions = event.response?.let(Models::options).orEmpty()
-                        event.response?.let(SlashCommands::fromInitialize)?.let(listener::onCommands)
+                        event.response?.let(SlashCommands::fromInitialize)?.let { listener.onCommands(withRemoteCommand(it)) }
                         requestContextUsage()
                         requestSettings()
-                        listener.onRemoteControl(remote)
+                        if (remoteAfterInit == null) listener.onRemoteControl(remote)
                     }
+                    settleRemoteAfterInit(ready = event.isSuccess)
                 }
                 pendingChoices.remove(event.requestId)?.let { undo ->
                     if (!event.isSuccess) undo()
@@ -850,7 +897,7 @@ class ChatSession(
         } else {
             val url = event.response?.str("session_url")?.takeIf { it.startsWith("https://") }
             reportRemote(RemoteControl.On(url))
-            emitNotice("Remote Control is on. Continue this chat at ${url ?: "claude.ai/code"} or in the Claude app.", isError = false)
+            emitNotice(remoteOnNotice(url), isError = false)
         }
     }
 
@@ -866,6 +913,15 @@ class ChatSession(
             }
         }
     }
+
+    private fun remoteOnNotice(url: String?) = "Remote Control is on. Continue this chat at ${url ?: "claude.ai/code"} or in the Claude app."
+
+    /**
+     * [commands] and [REMOTE_COMMAND] after them. An empty list stays empty, as it says nothing about which commands
+     * there are (see [CommandCatalog.remember]); so does one that already offers a command by that name.
+     */
+    private fun withRemoteCommand(commands: List<SlashCommand>) =
+        if (commands.isEmpty() || commands.any { it.name == REMOTE_COMMAND.name }) commands else commands + REMOTE_COMMAND
 
     /** Writes a prompt to the process, remembering [uuid] so its replay is known for this session's own. */
     private fun sendPrompt(line: String, uuid: String) {
@@ -1086,6 +1142,7 @@ class ChatSession(
         backgroundTasks = emptyList()
         reportProcesses()
         remoteRequestId = null
+        remoteAfterInit = null
         sentUuids.clear()
         reportRemote(RemoteControl.Off)
         endAgents { true }

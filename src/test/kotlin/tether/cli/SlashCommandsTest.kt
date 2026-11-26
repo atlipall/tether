@@ -40,4 +40,11 @@ class SlashCommandsTest {
             SlashCommands.fromAcp(update),
         )
     }
+
+    @Test fun argsOf() {
+        assertEquals("", SlashCommands.argsOf("/remote-control", "remote-control"))
+        assertEquals("my laptop", SlashCommands.argsOf("/remote-control  my\n laptop ", "remote-control"))
+        assertEquals(null, SlashCommands.argsOf("/remote-controller", "remote-control"))
+        assertEquals(null, SlashCommands.argsOf("please /remote-control", "remote-control"))
+    }
 }

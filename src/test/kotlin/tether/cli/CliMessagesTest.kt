@@ -50,6 +50,9 @@ class CliMessagesTest {
         assertEquals(
             """{"type":"control_request","request_id":"r2","request":{"subtype":"remote_control","enabled":false}}""",
             CliMessages.remoteControl("r2", false))
+        assertEquals(
+            """{"type":"control_request","request_id":"r3","request":{"subtype":"remote_control","enabled":true,"name":"laptop"}}""",
+            CliMessages.remoteControl("r3", true, "laptop"))
     }
 
     @Test fun allowEchoesInput() {

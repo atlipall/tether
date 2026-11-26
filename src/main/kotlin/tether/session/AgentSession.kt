@@ -62,8 +62,9 @@ interface AgentSession {
     fun interrupt()
 
     /**
-     * Turns Remote Control on or off (see [RemoteControl]); the outcome comes to [ChatListener.onRemoteControl]. Ignored
-     * by agents without it, while no process runs, and while an earlier change is still unanswered.
+     * Turns Remote Control on or off (see [RemoteControl]); the outcome comes to [ChatListener.onRemoteControl]. Turning
+     * it on before the agent is ready waits until it is. Ignored by agents without it, while no process runs, and while
+     * an earlier change is still unanswered. A Claude chat also turns it on for the message `/remote-control [name]`.
      */
     fun setRemoteControl(on: Boolean) {}
 

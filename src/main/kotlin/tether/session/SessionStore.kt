@@ -1,5 +1,6 @@
 package tether.session
 
+import tether.cli.CliPrompts
 import tether.cli.SlashCommands
 import tether.cli.bool
 import tether.cli.obj
@@ -189,7 +190,7 @@ class SessionStore(private val claudeHome: File) {
         if (obj.bool("isMeta") == true || obj.bool("isSidechain") == true) return null
         val content = obj.obj("message")?.get("content")
         val text = textOf(content)
-        if (text != null && (text.startsWith("<") || text.startsWith("[Request interrupted"))) return null
+        if (text != null && (CliPrompts.isFromCli(text) || text.startsWith("[Request interrupted"))) return null
         val typed = text?.let(::stripIdeNote)
         val images = (content as? JsonArray).orEmpty().count { (it as? JsonObject)?.str("type") == "image" }
         if (images == 0) return typed

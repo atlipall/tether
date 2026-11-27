@@ -104,9 +104,6 @@ object CliParser {
     /** What a replayed prompt of only images reads as. */
     private const val IMAGE_MARK = "[image]"
 
-    /** The tags that open a prompt the CLI writes itself rather than one a person typed. */
-    private val CLI_PROMPT_TAGS = listOf("<task-notification>")
-
     fun parse(line: String): List<CliEvent> {
         val obj = parseJsonObject(line) ?: return listOf(CliEvent.Malformed(line))
         return when (val type = obj.str("type")) {
@@ -201,10 +198,10 @@ object CliParser {
         val content = obj.obj("message")?.get("content") ?: return emptyList()
         val parent = obj.str("parent_tool_use_id")
         val replay = obj.bool("isReplay") == true
-        fun userText(text: String) = CliEvent.UserText(
-            if (replay) SlashCommands.typed(text) ?: text else text, obj.str("uuid"), replay,
-            fromCli = CLI_PROMPT_TAGS.any { text.trimStart().startsWith(it) },
-        )
+        fun userText(text: String): CliEvent.UserText {
+            val shown = if (replay) SlashCommands.typed(text) ?: text else text
+            return CliEvent.UserText(shown, obj.str("uuid"), replay, fromCli = CliPrompts.isFromCli(shown))
+        }
         if (content is JsonPrimitive) return if (parent == null) listOf(userText(content.content)) else emptyList()
         val blocks = (content as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
         if (replay && blocks.none { it.str("type") == "tool_result" }) {

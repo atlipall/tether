@@ -134,6 +134,23 @@ class SessionStoreTest {
             store.read(cwd, "s1").items)
     }
 
+    @Test fun transcriptHidesMessagesTheCliWroteButKeepsTypedOnesThatStartWithATag() {
+        val store = SessionStore(tmp.root)
+        write(store, "s1", 1,
+            user("<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"),
+            user("<bash-input>ls</bash-input>"),
+            user("<bash-stdout>a</bash-stdout><bash-stderr></bash-stderr>"),
+            user("<local-command-stdout>Set model</local-command-stdout>"),
+            user("<command-message>simplify</command-message>\n<command-name>/simplify</command-name>"),
+            user("<artifact-content-authored-by-others/>\nThe summary held others' artifacts."),
+            user("<div>why is this not centred</div>"),
+            user("<b>bold</b> is not rendering"),
+        )
+        assertEquals(
+            listOf("<div>why is this not centred</div>", "<b>bold</b> is not rendering"),
+            store.read(cwd, "s1").items.filterIsInstance<ChatItem.UserText>().map { it.text })
+    }
+
     @Test fun transcriptShowsLocalCommandsAndTheirOutput() {
         val store = SessionStore(tmp.root)
         write(store, "s1", 1,

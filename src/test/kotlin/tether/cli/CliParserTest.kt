@@ -165,6 +165,16 @@ class CliParserTest {
         CliEvent.UserText("/compact keep the plan", "id-2", replay = true),
         one(Fx.replayedPrompt("<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args>keep the plan</command-args>", "id-2")))
 
+    @Test fun replayedTaskNotificationIsMarkedFromTheCli() {
+        val text = "<task-notification>\n<task-id>b1</task-id>\n</task-notification>"
+        assertEquals(CliEvent.UserText(text, "id-5", replay = true, fromCli = true), one(Fx.replayedPrompt(text, "id-5")))
+    }
+
+    @Test fun replayedPromptWrappedInATagIsTyped() {
+        val text = "<div>why is this not centred</div>"
+        assertEquals(CliEvent.UserText(text, "id-6", replay = true), one(Fx.replayedPrompt(text, "id-6")))
+    }
+
     @Test fun replayedPromptWithImagesIsOneMessage() {
         val line = """{"type":"user","message":{"role":"user","content":[{"type":"text","text":"look"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA"}},{"type":"text","text":"here"}]},"parent_tool_use_id":null,"uuid":"id-3","isReplay":true}"""
         assertEquals(CliEvent.UserText("look\n\nhere", "id-3", replay = true), one(line))

@@ -62,9 +62,15 @@ sealed interface CliEvent {
     /**
      * A main-conversation user message's text. [replay] marks the CLI's echo of a prompt it took (see
      * `--replay-user-messages`), named by the [uuid] it was sent with; a prompt that came over Remote Control carries
-     * one the plugin never sent. A slash command reads as typed, `/name args`.
+     * one the plugin never sent. A slash command reads as typed, `/name args`. [fromCli] marks a prompt the CLI wrote
+     * itself, such as the `<task-notification>` it sends when a background command ends: no one typed it.
      */
-    data class UserText(val text: String, val uuid: String? = null, val replay: Boolean = false) : CliEvent
+    data class UserText(
+        val text: String,
+        val uuid: String? = null,
+        val replay: Boolean = false,
+        val fromCli: Boolean = false,
+    ) : CliEvent
     data class PermissionRequest(val requestId: String, val toolName: String, val toolUseId: String?, val input: JsonObject) : CliEvent
     /** Claude's MCP traffic for in-process server [server]; a JSON-RPC request is answered with [CliMessages.mcpResponse]. */
     data class McpMessage(val requestId: String, val server: String, val message: JsonObject) : CliEvent
@@ -97,6 +103,9 @@ object CliParser {
     private val EMPTY = JsonObject(emptyMap())
     /** What a replayed prompt of only images reads as. */
     private const val IMAGE_MARK = "[image]"
+
+    /** The tags that open a prompt the CLI writes itself rather than one a person typed. */
+    private val CLI_PROMPT_TAGS = listOf("<task-notification>")
 
     fun parse(line: String): List<CliEvent> {
         val obj = parseJsonObject(line) ?: return listOf(CliEvent.Malformed(line))
@@ -192,7 +201,10 @@ object CliParser {
         val content = obj.obj("message")?.get("content") ?: return emptyList()
         val parent = obj.str("parent_tool_use_id")
         val replay = obj.bool("isReplay") == true
-        fun userText(text: String) = CliEvent.UserText(if (replay) SlashCommands.typed(text) ?: text else text, obj.str("uuid"), replay)
+        fun userText(text: String) = CliEvent.UserText(
+            if (replay) SlashCommands.typed(text) ?: text else text, obj.str("uuid"), replay,
+            fromCli = CLI_PROMPT_TAGS.any { text.trimStart().startsWith(it) },
+        )
         if (content is JsonPrimitive) return if (parent == null) listOf(userText(content.content)) else emptyList()
         val blocks = (content as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
         if (replay && blocks.none { it.str("type") == "tool_result" }) {

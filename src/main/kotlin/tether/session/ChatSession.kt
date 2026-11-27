@@ -871,11 +871,12 @@ class ChatSession(
     /**
      * A prompt the CLI took. This session's own were shown when sent; any other came from elsewhere (claude.ai over
      * Remote Control), so it is shown now and the chat is busy with its turn. One without a uuid can't be told apart, so
-     * it is taken for this session's own rather than risk showing a message twice.
+     * it is taken for this session's own rather than risk showing a message twice. One the CLI wrote itself
+     * ([CliEvent.UserText.fromCli]) starts a turn but is no one's message, so it is not shown.
      */
     private fun onReplayedPrompt(event: CliEvent.UserText) {
         if (event.uuid == null || sentUuids.remove(event.uuid)) return
-        emit(ChatItem.UserText(nextId("user"), event.text))
+        if (!event.fromCli) emit(ChatItem.UserText(nextId("user"), event.text))
         if (!turnOpen) beginRunning(Activity.Starting)
         reportActivity()
     }

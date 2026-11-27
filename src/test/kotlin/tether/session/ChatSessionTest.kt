@@ -1598,6 +1598,23 @@ class ChatSessionTest {
         assertNull(listener.activities.last())
     }
 
+    @Test fun aBackgroundTaskNotificationIsNotShownAsAUserMessageButStillStartsATurn() {
+        val s = session()
+        answerInit()
+        val notification = "<task-notification>\n<task-id>bkwyquz4b</task-id>\n<status>completed</status>\n" +
+            "<summary>Background command \"Check\" completed (exit code 0)</summary>\n</task-notification>"
+        conn.emit(Fx.replayedPrompt(notification, "notice-1"))
+        assertTrue(listener.items.filterIsInstance<ChatItem.UserText>().isEmpty())
+        assertEquals(SessionState.RUNNING, s.state)
+    }
+
+    @Test fun aPromptFromElsewhereWrappedInATagIsShown() {
+        session()
+        answerInit()
+        conn.emit(Fx.replayedPrompt("<div>why is this not centred</div>", "from-phone"))
+        assertEquals(listOf("<div>why is this not centred</div>"), listener.items.filterIsInstance<ChatItem.UserText>().map { it.text })
+    }
+
     @Test fun aMessageTypedHereWaitsForARemoteTurn() {
         val s = session()
         answerInit()

@@ -163,6 +163,7 @@ class Chats(private val project: Project) : Disposable {
             commandCatalog = commandCatalog,
             modelCatalog = modelCatalog,
             findPullRequest = pullRequests::find,
+            retryLater = { delay, task -> AppExecutorUtil.getAppScheduledExecutorService().schedule(task, delay, TimeUnit.MILLISECONDS) },
         )
         tracker.register(chat.id)
         git.settle(chat.id, chat.cwd)

@@ -744,6 +744,60 @@ class ChatsTest : BasePlatformTestCase() {
         }
     }
 
+    fun testFailedPullRequestLookupIsRetriedWithBackoffUntilGitHubAnswers() {
+        val repo = gitRepo() ?: return
+        val opened = tether.git.PullRequest(9, "https://github.com/o/r/pull/9", "Nine", tether.git.PullRequest.Status.OPEN)
+        val answers = ArrayDeque(listOf(
+            tether.git.PullRequestLookup.Failed, tether.git.PullRequestLookup.Failed, tether.git.PullRequestLookup.Found(opened),
+        ))
+        val retries = mutableListOf<Pair<Long, Runnable>>()
+        val chat = Chat(
+            id = 96, spec = ChatSpec.inProject(repo.path), history = emptyList(), connector = { FakeConnection() },
+            editNote = { null },
+            findPullRequest = { _, _ -> answers.removeFirst() },
+            retryLater = { delay, run -> retries += delay to run },
+        )
+        try {
+            chat.refreshPullRequest()
+            assertNull(chat.pullRequest)
+            assertEquals(1, retries.size)
+            val (firstDelay, firstRetry) = retries.removeFirst()
+            firstRetry.run()
+            assertNull(chat.pullRequest)
+            assertEquals(1, retries.size)
+            val (secondDelay, secondRetry) = retries.removeFirst()
+            secondRetry.run()
+            assertEquals(opened, chat.pullRequest)
+            assertTrue("each retry waits longer", secondDelay > firstDelay)
+            assertTrue(retries.isEmpty())
+        } finally {
+            chat.dispose()
+        }
+    }
+
+    fun testRetryOfAFailedPullRequestLookupIsDroppedOnceANewerLookupStarted() {
+        val repo = gitRepo() ?: return
+        var answer: tether.git.PullRequestLookup = tether.git.PullRequestLookup.Failed
+        var asked = 0
+        val retries = mutableListOf<Runnable>()
+        val chat = Chat(
+            id = 95, spec = ChatSpec.inProject(repo.path), history = emptyList(), connector = { FakeConnection() },
+            editNote = { null },
+            findPullRequest = { _, _ -> asked++; answer },
+            retryLater = { _, run -> retries += run },
+        )
+        try {
+            chat.refreshPullRequest()
+            answer = tether.git.PullRequestLookup.None
+            chat.refreshPullRequest()
+            assertEquals(2, asked)
+            retries.single().run()
+            assertEquals("a stale retry does not ask GitHub again", 2, asked)
+        } finally {
+            chat.dispose()
+        }
+    }
+
     fun testObservingAnotherBranchLooksUpItsPullRequestOnceAndDetachedHeadClearsIt() {
         val repo = gitRepo() ?: return
         val asked = mutableListOf<String>()

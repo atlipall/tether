@@ -172,6 +172,11 @@ class Chat(
     private val nameForBranch: (String) -> String = { it },
     /** The pull request for a folder and branch, looked up through [background] (blocks); null looks none up. */
     private val findPullRequest: ((dir: String, branch: String) -> PullRequestLookup)? = null,
+    /**
+     * Runs the task once, after the given number of milliseconds, on any thread: how a pull request lookup GitHub did
+     * not answer is tried again. Null never tries again.
+     */
+    private val retryLater: ((delayMillis: Long, task: Runnable) -> Unit)? = null,
 ) {
     val label: String = spec.label
 
@@ -605,15 +610,14 @@ class Chat(
     @Volatile private var pullRequestBranch: String? = null
 
     /**
-     * Looks up the pull request for [branch], [cwd]'s branch, in the background and shows it when it changed; a failed lookup
-     * keeps what is shown. Outside a branch (detached, not a repository) there is none to look up. Called when the
-     * chat opens, when a turn ends (Claude may have opened one) and when the branch changes, whether seen by the
+     * Looks up the pull request for [branch], [cwd]'s branch, in the background and shows it when it changed; a failed
+     * lookup keeps what is shown and is tried again later ([lookUpPullRequest]). Outside a branch (detached, not a
+     * repository) there is none to look up. Called when the chat opens, when a turn ends (Claude may have opened one) and when the branch changes, whether seen by the
      * session ([followBranch]) or by the [BranchGuard][tether.ide.BranchGuard] ([observeBranch]). Any thread; returns
      * at once.
      */
     fun refreshPullRequest(branch: String? = currentBranch(cwd)) {
-        val find = findPullRequest ?: return
-        if (cwdIsGuess) return
+        if (findPullRequest == null || cwdIsGuess) return
         val dir = cwd
         val lookup = pullRequestLookups.incrementAndGet()
         pullRequestBranch = branch
@@ -621,11 +625,27 @@ class Chat(
             show(lookup, null)
             return
         }
-        background {
-            when (val result = find(dir, branch)) {
-                is PullRequestLookup.Found -> show(lookup, result.pullRequest)
-                PullRequestLookup.None -> show(lookup, null)
-                PullRequestLookup.Failed -> {}
+        background { lookUpPullRequest(lookup, dir, branch, attempt = 0) }
+    }
+
+    /**
+     * Asks [findPullRequest] for [branch]'s pull request and shows the answer. When GitHub does not answer (offline,
+     * slow, just after waking), asks again through [retryLater] after a longer wait each time, up to
+     * [PULL_REQUEST_RETRIES] times, unless a later lookup has started or the chat was disposed (which counts as one)
+     * by then. Blocks: call it through [background].
+     */
+    private fun lookUpPullRequest(lookup: Int, dir: String, branch: String, attempt: Int) {
+        val find = findPullRequest ?: return
+        if (lookup != pullRequestLookups.get()) return
+        when (val result = find(dir, branch)) {
+            is PullRequestLookup.Found -> show(lookup, result.pullRequest)
+            PullRequestLookup.None -> show(lookup, null)
+            PullRequestLookup.Failed -> {
+                val retry = retryLater ?: return
+                if (attempt >= PULL_REQUEST_RETRIES) return
+                retry(pullRequestRetryDelay(attempt)) {
+                    background { lookUpPullRequest(lookup, dir, branch, attempt + 1) }
+                }
             }
         }
     }
@@ -891,6 +911,7 @@ class Chat(
 
     fun dispose() {
         disposed = true
+        pullRequestLookups.incrementAndGet()
         unsubscribeModels()
         outbox.clear()
         sendPending = false
@@ -900,6 +921,22 @@ class Chat(
     }
     private companion object {
         val CLAUDE_MODES = PermissionMode.entries.map { Choice(it.cli, it.label) }
+
+        /** How many times a pull request lookup GitHub did not answer is tried again; about 13 minutes in all. */
+        const val PULL_REQUEST_RETRIES = 6
+
+        /** The wait before the first retry of a pull request lookup. */
+        const val FIRST_PULL_REQUEST_RETRY_MILLIS = 15_000L
+
+        /** The longest wait between retries of a pull request lookup. */
+        const val LONGEST_PULL_REQUEST_RETRY_MILLIS = 300_000L
+
+        /**
+         * The wait before retry number [attempt] (from 0): [FIRST_PULL_REQUEST_RETRY_MILLIS], doubling each time, at
+         * most [LONGEST_PULL_REQUEST_RETRY_MILLIS].
+         */
+        fun pullRequestRetryDelay(attempt: Int): Long =
+            (FIRST_PULL_REQUEST_RETRY_MILLIS shl attempt).coerceAtMost(LONGEST_PULL_REQUEST_RETRY_MILLIS)
     }
 }
 
